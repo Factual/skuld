@@ -3,12 +3,23 @@
         [clojure.tools.cli :only [cli]])
   (:require [skuld.admin :as admin]
             [skuld.node :as node])
+  (:import (sun.misc Signal SignalHandler))
   (:gen-class))
 
 (defn parse-int
   "Parse an integer."
   [s]
   (Integer. s))
+
+(defmacro signal
+  "Adds a signal handler."
+  [signal & body]
+  `(when-not (.contains (System/getProperty "os.name") "Windows")
+     (Signal/handle
+       (Signal. (name ~signal))
+       (reify SignalHandler
+         (handle [this# sig#]
+           ~@body)))))
 
 (def admin-spec
   [["-z" "--zookeeper" "Zookeeper connection string"
@@ -47,20 +58,36 @@
          args))
 
 ; Node management
+(defn controller [& args]
+  (let [[opts _ _] (apply cli args node-spec)
+        controller (node/controller opts)]
+    (signal :INT
+            (println "Caught SIGINT; shutting down.")
+            (node/shutdown! controller))
+
+    (println "Controller started.")
+    (prn controller)
+    @(promise)))
+
 (defn start [& args]
-  (let [[opts _ _]  (apply cli args node-spec)
-        node        (node/node opts)]
-    (prn :started node)
-    (Thread/sleep 30000)
-    (node/shutdown! node)))
+  (mute
+    (let [[opts _ _]  (apply cli args node-spec)
+          node        (node/node opts)]
+      (signal :INT
+              (println "Caught SIGINT; shutting down.")
+              (node/shutdown! node)
+              (System/exit 0))
+
+      (prn :started node)
+      @(promise))))
 
 (defn -main
   [cmd & args]
   (try
-    (mute
       (apply (case cmd
                "cluster" cluster
+               "controller" controller
                "start" start)
-             args))
+             args)
     (catch Throwable t
       (.printStackTrace t))))
