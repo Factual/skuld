@@ -32,20 +32,11 @@
                            (swap! vnodes assoc part true)
                            (locking *out*
                              (println "\n" part "online")))
-                 
-                  (:DROPPED :offline [part m c]
+                
+
+                  (:offline :DROPPED [part m c]
                             (locking *out*
                               (println part "dropped->offline")))
-
-                  (:DROPPED :peer [part m c]
-                            (locking *out*
-                              (prn part "dropped -> peer")
-                              (swap! vnodes assoc part true)))
-
-                  (:peer :DROPPED [part m c]
-                         (locking *out*
-                           (swap! vnodes dissoc part)
-                           (prn part "Dropping")))
 
                   (:peer :offline [part m c]
                             (locking *out*
@@ -54,7 +45,7 @@
 
         _ (future
             (loop []
-              (Thread/sleep 5000)
+              (Thread/sleep 1000)
               (prn (keys @vnodes))
               (recur)))
 
@@ -65,13 +56,6 @@
                                         :cluster cluster
                                         :instance {:host host :port port}
                                         :fsm fsm})]
-
-    (.addExternalViewChangeListener
-      participant
-      (reify org.apache.helix.ExternalViewChangeListener
-        (onExternalViewChange [this ideal-state ctx]
-          (locking *out*
-            (prn ideal-state ctx)))))
 
     {:host host
      :port port
