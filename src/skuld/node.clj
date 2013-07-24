@@ -6,11 +6,12 @@
 
 (def fsm-def (helix-fsm/fsm-definition
                {:name   :skuld
-                :states {:offline {:initial? true
-                                   :transitions :peer}
+                :states {:DROPPED {:transitions :offline}
+                         :offline {:initial? true
+                                   :transitions [:peer :DROPPED]}
                          :peer {:priority 1
                                 :upper-bound :R
-                                :transitions [:DROPPED :offline]}}}))
+                                :transitions :offline}}}))
 
 (defn node
   "Creates a new node with the given options.
@@ -28,19 +29,34 @@
         fsm     (helix-fsm/fsm
                   fsm-def
                   (:offline :peer [part m c]
-                            (locking *out*
-                              (prn part "Coming online; silvering"))
-                            (dotimes [i 5]
-                              (Thread/sleep 1000)
-                              (locking *out*
-                                (print ".") (flush)))
+                           (swap! vnodes assoc part true)
                            (locking *out*
-                             (println "\n" part "ready")))
+                             (println "\n" part "online")))
+                 
+                  (:DROPPED :offline [part m c]
+                            (locking *out*
+                              (println part "dropped->offline")))
 
+                  (:DROPPED :peer [part m c]
+                            (locking *out*
+                              (prn part "dropped -> peer")
+                              (swap! vnodes assoc part true)))
+
+                  (:peer :DROPPED [part m c]
+                         (locking *out*
+                           (swap! vnodes dissoc part)
+                           (prn part "Dropping")))
 
                   (:peer :offline [part m c]
                             (locking *out*
+                              (swap! vnodes dissoc part)
                               (prn part "Offline"))))
+
+        _ (future
+            (loop []
+              (Thread/sleep 5000)
+              (prn (keys @vnodes))
+              (recur)))
 
 ;        controller  (helix/controller {:zookeeper zk
 ;                                       :cluster cluster
@@ -49,6 +65,14 @@
                                         :cluster cluster
                                         :instance {:host host :port port}
                                         :fsm fsm})]
+
+    (.addExternalViewChangeListener
+      participant
+      (reify org.apache.helix.ExternalViewChangeListener
+        (onExternalViewChange [this ideal-state ctx]
+          (locking *out*
+            (prn ideal-state ctx)))))
+
     {:host host
      :port port
      :participant participant
