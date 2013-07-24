@@ -61,9 +61,10 @@
 (defn controller [& args]
   (let [[opts _ _] (apply cli args node-spec)
         controller (node/controller opts)]
-    (signal :INT
-            (println "Caught SIGINT; shutting down.")
-            (node/shutdown! controller))
+      
+    (.addShutdownHook (Runtime/getRuntime)
+                      (Thread. (bound-fn []
+                                 (node/shutdown! controller))))
 
     (println "Controller started.")
     (prn controller)
@@ -73,10 +74,10 @@
   (mute
     (let [[opts _ _]  (apply cli args node-spec)
           node        (node/node opts)]
-      (signal :INT
-              (println "Caught SIGINT; shutting down.")
-              (node/shutdown! node)
-              (System/exit 0))
+
+      (.addShutdownHook (Runtime/getRuntime)
+                        (Thread. (bound-fn []
+                                   (node/shutdown! node))))
 
       (prn :started node)
       @(promise))))
