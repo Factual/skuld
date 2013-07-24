@@ -66,23 +66,61 @@
         (.write ctx response)))))
 
 (defn shutdown-client!
+  "Shuts down a netty client for a node."
   [client]
-  (let [^NioEventLoopGroup g (:group client)]
-    (.shutdown g)
-    (.awaitTermination g 30 TimeUnit/SECONDS)))
+  (when client
+    (let [^NioEventLoopGroup g (:group client)]
+      (.shutdown g)
+      (.awaitTermination g 30 TimeUnit/SECONDS))))
 
 (defn shutdown-server!
+  "Shuts down a netty server for a node."
   [server]
-  (let [^NioEventLoopGroup g1 (:boss-group server)
-        ^NioEventLoopGroup g2 (:worker-group server)]
-    (.shutdown g1)
-    (.shutdown g2)
-    (.awaitTermination g1 30 TimeUnit/SECONDS)
-    (.awaitTermination g2 30 TimeUnit/SECONDS)))
+  (when server
+    (let [^NioEventLoopGroup g1 (:boss-group server)
+          ^NioEventLoopGroup g2 (:worker-group server)]
+      (.shutdown g1)
+      (.shutdown g2)
+      (.awaitTermination g1 30 TimeUnit/SECONDS)
+      (.awaitTermination g2 30 TimeUnit/SECONDS))))
 
-(def peer-attr
-  "Netty identifier for a channel's peer"
+(defonce peer-attr
   (AttributeKey. "skuld-peer"))
+
+(defn server
+  "Starts a netty server for this node."
+  [node]
+  (let [bootstrap ^ServerBootstrap (ServerBootstrap.)
+        boss-group (NioEventLoopGroup.)
+        worker-group (NioEventLoopGroup.)]
+    (try
+      (doto bootstrap
+        (.group boss-group worker-group)
+        (.channel NioServerSocketChannel)
+        (.localAddress ^String (:host node) ^int (:port node))
+        (.option ChannelOption/SO_BACKLOG 100)
+        (.childOption ChannelOption/TCP_NODELAY true)
+        (.childHandler
+          (proxy [ChannelInitializer] []
+            (initChannel [^SocketChannel ch]
+              (.. ch
+                  (pipeline)
+                  (addLast protobuf-varint32-frame-decoder)
+                  (addLast protobuf-varint32-frame-encoder)
+                  (addLast edn-decoder)
+                  (addLast edn-encoder)
+                  (addLast event-executor (handler (:handler node))))))))
+      {:listener (.. bootstrap bind sync)
+       :bootstrap bootstrap
+       :boss-group boss-group
+       :worker-group worker-group}
+
+      (catch Throwable t
+        (.shutdown boss-group)
+        (.shutdown worker-group)
+        (.awaitTermination boss-group 30 TimeUnit/SECONDS)
+        (.awaitTermination worker-group 30 TimeUnit/SECONDS)
+        (throw t)))))
 
 (defn inactive-client-handler
   "When client conns go inactive, unregisters them from the corresponding
@@ -102,25 +140,25 @@
 
 (defn client
   [node]
-  (let [bootstrap  (Bootstrap.)
+  (let [bootstrap ^Bootstrap (Bootstrap.)
         group- (NioEventLoopGroup. 16)
         inactive-handler (inactive-client-handler node)
         handler (handler (:handler node))]
     (try
-      (.. bootstrap
-          (group group-)
-          (setChildOption ChannelOption/TCP_NODELAY true)
-          (setChildOption ChannelOption/SO_KEEPALIVE true)
-          (setHandler (proxy [ChannelInitializer] []
-                        (initChannel [^Channel ch]
-                          (.. ch
-                              pipeline
-                              (addLast protobuf-varint32-frame-decoder
-                                       protobuf-varint32-frame-encoder
-                                       edn-decoder
-                                       edn-encoder
-                                       inactive-handler)
-                              (addLast event-executor handler))))))
+      (doto bootstrap
+        (.group group-)
+        (.option ChannelOption/TCP_NODELAY true)
+        (.option ChannelOption/SO_KEEPALIVE true)
+        (.handler (proxy [ChannelInitializer] []
+                    (initChannel [^SocketChannel ch]
+                      (.. ch
+                          (pipeline)
+                          (addLast protobuf-varint32-frame-decoder)
+                          (addLast protobuf-varint32-frame-encoder)
+                          (addLast edn-decoder)
+                          (addLast edn-encoder)
+                          (addLast inactive-handler)
+                          (addLast event-executor handler))))))
       {:bootstrap bootstrap
        :group group-}
 
@@ -133,10 +171,12 @@
   "Opens a new client connection to the given peer, identified by host and
   port. Returns a netty Channel."
   [node peer]
-  (let [ch (.. (:bootstrap (:client node))
-               (connect (:host peer) (:port peer))
-               sync
-               channel)]
+  (let [^Bootstrap bootstrap (:bootstrap (:client node))
+        ch (.. bootstrap
+               (remoteAddress ^String (:host peer) ^int (:port peer))
+               (connect)
+               (sync)
+               (channel))]
     ; Store the peer ID in the channel's attributes for later.
     (.. ch
         (attr peer-attr)
@@ -156,7 +196,7 @@
             (if-let [existing-conn (get @conns peer)]
               (do
                 ; Abandon new conn
-                (.close conn)
+                (.close ^Channel conn)
                 existing-conn)
               (do
                 ; Use new conn
@@ -169,39 +209,6 @@
   (-> (conn node peer)
       (.write conn msg))
   node)
-
-(defn server
-  [opts]
-  (let [bootstrap (ServerBootstrap.)
-        boss-group (NioEventLoopGroup.)
-        worker-group (NioEventLoopGroup.)]
-      (try
-        (.. bootstrap
-            (group boss-group worker-group)
-            (channel NioServerSocketChannel)
-            (localAddress (InetSocketAddress. (:host opts)) (:port opts))
-            (option ChannelOption/SO_BACKLOG 100)
-            (childOption ChannelOption/TCP_NODELAY true)
-            (childHandler
-              (proxy [ChannelInitializer] []
-                (initChannel [^SocketChannel ch]
-                  (.. ch pipeline
-                      (addLast protobuf-varint32-frame-decoder
-                               protobuf-varint32-frame-encoder
-                               edn-decoder
-                               edn-encoder)
-                      (addLast event-executor (handler (:handler opts))))))))
-        {:listener (.. bootstrap bind sync)
-         :bootstrap bootstrap
-         :boss-group boss-group
-         :worker-group worker-group}
-        
-        (catch Throwable t
-          (.shutdownGracefully boss-group)
-          (.shutdownGracefully worker-group)
-          (.. boss-group terminationFuture sync)
-          (.. worker-group terminationFuture sync)
-          (throw t)))))
 
 (defn node
   "Creates a new network node. Options:

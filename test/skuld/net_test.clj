@@ -5,5 +5,6 @@
 (deftest basics
   (let [node (node {:handler prn})]
     (try (start! node)
+         (prn node)
          (finally
            (shutdown! node)))))

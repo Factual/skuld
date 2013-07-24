@@ -8,7 +8,7 @@
 
 (defn parse-int
   "Parse an integer."
-  [s]
+  [^String s]
   (Integer. s))
 
 (defmacro signal
