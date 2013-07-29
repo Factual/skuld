@@ -6,5 +6,8 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.5.1"]
                  [org.clojure/tools.cli "0.2.2"]
+                 [org.clojure/tools.logging "0.2.3"]
                  [clj-helix "0.1.0-SNAPSHOT"]
-                 [io/netty/netty "4.0.0.Alpha8"]])
+                 [io/netty/netty "4.0.0.Alpha8"]
+                 [com.taoensso/nippy "2.0.0"]
+                 [com.google.protobuf/protobuf-java "2.5.0"]])

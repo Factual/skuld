@@ -2,8 +2,11 @@
   "Handles network communication between nodes. Automatically maintains TCP
   connections encapsulated in a single stateful component. Allows users to
   register callbacks to receive messages."
-  (:require [clojure.edn :as edn])
+  (:require [clojure.edn :as edn]
+            [taoensso.nippy :as nippy])
+;  (:use clojure.tools.logging) 
   (:import (java.io ByteArrayInputStream
+                    DataInputStream
                     InputStreamReader
                     PushbackReader)
            (java.net InetSocketAddress)
@@ -21,40 +24,65 @@
                              ChannelInboundMessageHandlerAdapter
                              ChannelInitializer
                              ChannelOption
-                             ChannelStateHandler
+                             ChannelStateHandlerAdapter
                              DefaultEventExecutorGroup)
            (io.netty.channel.socket SocketChannel)
            (io.netty.channel.socket.nio NioEventLoopGroup
+                                        NioSocketChannel
                                         NioServerSocketChannel)
-           (io.netty.handler.codec MessageToMessageDecoder
-                                   MessageToMessageEncoder)
+           (io.netty.handler.codec MessageToMessageCodec)
            (io.netty.handler.codec.protobuf ProtobufVarint32FrameDecoder
                                             ProtobufVarint32LengthFieldPrepender)
            (io.netty.util Attribute
                           AttributeKey)))
 
+(def logger (agent nil))
+(defn log-print
+  [_ & things]
+  (apply println things))
+(defn log
+  [& things]
+  (apply send-off logger log-print things))
+
+(declare started?)
+
 (defonce event-executor
   (DefaultEventExecutorGroup. 16))
 
-(def protobuf-varint32-frame-decoder
+(defn protobuf-varint32-frame-decoder []
   (ProtobufVarint32FrameDecoder.))
 
 (def protobuf-varint32-frame-encoder
   (ProtobufVarint32LengthFieldPrepender.))
 
-(def edn-decoder
-  (proxy [MessageToMessageDecoder] [(into-array Class [ByteBuf])]
-    (decode [^ChannelHandlerContext ctx ^ByteBuf buffer ^List out]
+(defn edn-codec []
+  (proxy [MessageToMessageCodec]
+    [(into-array Class [ByteBuf]) (into-array Class [Object])]
+
+    (encode [^ChannelHandlerContext ctx object]
+      (->> object pr-str .getBytes Unpooled/wrappedBuffer))
+
+    (decode [^ChannelHandlerContext ctx ^ByteBuf buffer]
       (with-open [is (ByteBufInputStream. buffer)
                   i  (InputStreamReader. is)
                   r  (PushbackReader. i)]
         (binding [*read-eval* false]
-          (.add out (edn/read r)))))))
+          (edn/read r))))))
 
-(def edn-encoder
-  (proxy [MessageToMessageEncoder] [(into-array Class [Object])]
-    (encode [^ChannelHandlerContext ctx object ^List out]
-      (->> object pr-str .getBytes Unpooled/wrappedBuffer (.add out)))))
+(defn nippy-codec []
+  (proxy [MessageToMessageCodec]
+    [(into-array Class [ByteBuf]) (into-array Class [Object])]
+
+    (encode [^ChannelHandlerContext ctx object]
+      (->> object nippy/freeze Unpooled/wrappedBuffer))
+
+    (decode [^ChannelHandlerContext ctx ^ByteBuf buffer]
+      (let [a (byte-array (.readableBytes buffer))]
+        (.readBytes buffer a)
+;      (with-open [is (ByteBufInputStream. buffer)
+;                  dis (DataInputStream. is)]
+        (binding [*read-eval* false]
+          (nippy/thaw a))))))
 
 (defn handler
   "Returns a Netty handler that calls f with its messages, and writes
@@ -62,27 +90,13 @@
   [f]
   (proxy [ChannelInboundMessageHandlerAdapter] [(into-array Class [Object])]
     (messageReceived [^ChannelHandlerContext ctx message]
-      (when-let [response (f message)]
+      (when-let [response (try (f message)
+                               (catch Throwable t
+                                 (locking *out*
+                                   (println "Node handler caught:")
+                                   (.printStackTrace t))
+                                 nil))]
         (.write ctx response)))))
-
-(defn shutdown-client!
-  "Shuts down a netty client for a node."
-  [client]
-  (when client
-    (let [^NioEventLoopGroup g (:group client)]
-      (.shutdown g)
-      (.awaitTermination g 30 TimeUnit/SECONDS))))
-
-(defn shutdown-server!
-  "Shuts down a netty server for a node."
-  [server]
-  (when server
-    (let [^NioEventLoopGroup g1 (:boss-group server)
-          ^NioEventLoopGroup g2 (:worker-group server)]
-      (.shutdown g1)
-      (.shutdown g2)
-      (.awaitTermination g1 30 TimeUnit/SECONDS)
-      (.awaitTermination g2 30 TimeUnit/SECONDS))))
 
 (defonce peer-attr
   (AttributeKey. "skuld-peer"))
@@ -97,19 +111,20 @@
       (doto bootstrap
         (.group boss-group worker-group)
         (.channel NioServerSocketChannel)
-        (.localAddress ^String (:host node) ^int (:port node))
-        (.option ChannelOption/SO_BACKLOG 100)
+        (.localAddress ^String (:host node) ^int (int (:port node)))
+        (.option ChannelOption/SO_BACKLOG (int 100))
         (.childOption ChannelOption/TCP_NODELAY true)
         (.childHandler
           (proxy [ChannelInitializer] []
             (initChannel [^SocketChannel ch]
               (.. ch
                   (pipeline)
-                  (addLast protobuf-varint32-frame-decoder)
-                  (addLast protobuf-varint32-frame-encoder)
-                  (addLast edn-decoder)
-                  (addLast edn-encoder)
-                  (addLast event-executor (handler (:handler node))))))))
+                  (addLast "fdecoder" (protobuf-varint32-frame-decoder))
+                  (addLast "fencoder" protobuf-varint32-frame-encoder)
+                  (addLast "codec" (edn-codec))
+                  (addLast event-executor "handler"
+                          (handler @(:handler node))))))))
+
       {:listener (.. bootstrap bind sync)
        :bootstrap bootstrap
        :boss-group boss-group
@@ -126,8 +141,8 @@
   "When client conns go inactive, unregisters them from the corresponding
   node."
   [node]
-  (reify ChannelStateHandler
-    (^void channelInactive [i^ChannelHandlerContext ctx]
+  (proxy [ChannelStateHandlerAdapter] []
+    (^void channelInactive [^ChannelHandlerContext ctx]
       (let [peer (.. ctx channel (attr peer-attr) get)]
         ; Dissoc from node's map
         (swap! (:conns node)
@@ -141,24 +156,23 @@
 (defn client
   [node]
   (let [bootstrap ^Bootstrap (Bootstrap.)
-        group- (NioEventLoopGroup. 16)
-        inactive-handler (inactive-client-handler node)
-        handler (handler (:handler node))]
+        group- (NioEventLoopGroup. 16)]
     (try
       (doto bootstrap
         (.group group-)
         (.option ChannelOption/TCP_NODELAY true)
         (.option ChannelOption/SO_KEEPALIVE true)
+        (.channel NioSocketChannel)
         (.handler (proxy [ChannelInitializer] []
                     (initChannel [^SocketChannel ch]
                       (.. ch
                           (pipeline)
-                          (addLast protobuf-varint32-frame-decoder)
-                          (addLast protobuf-varint32-frame-encoder)
-                          (addLast edn-decoder)
-                          (addLast edn-encoder)
-                          (addLast inactive-handler)
-                          (addLast event-executor handler))))))
+                          (addLast "fdecoder" (protobuf-varint32-frame-decoder))
+                          (addLast "fencoder" protobuf-varint32-frame-encoder)
+                          (addLast "codec" (edn-codec))
+                          (addLast "inactive" (inactive-client-handler node))
+                          (addLast event-executor "handler"
+                                  (handler @(:handler node))))))))
       {:bootstrap bootstrap
        :group group-}
 
@@ -167,47 +181,68 @@
         (.awaitTermination group- 30 TimeUnit/SECONDS)
         (throw t)))))
 
+(defn node-id
+  "A short identifier for a node."
+  [node]
+  (str (:host node) ":" (:port node)))
+
 (defn connect
   "Opens a new client connection to the given peer, identified by host and
   port. Returns a netty Channel."
   [node peer]
-  (let [^Bootstrap bootstrap (:bootstrap (:client node))
-        ch (.. bootstrap
-               (remoteAddress ^String (:host peer) ^int (:port peer))
-               (connect)
-               (sync)
-               (channel))]
-    ; Store the peer ID in the channel's attributes for later.
-    (.. ch
-        (attr peer-attr)
-        (set peer))
-    ch))
+  (assert (started? node))
+  (assert (integer? (:port peer))
+          (str (pr-str peer) " peer doesn't have an integer port"))
+  (assert (string? (:host peer))
+          (str (pr-str peer) " peer doesn't have a string host"))
+
+  (let [^Bootstrap bootstrap (:bootstrap @(:client node))]
+    (locking bootstrap
+      (let [ch (.. bootstrap
+                   (remoteAddress ^String (:host peer) (int (:port peer)))
+                   (connect)
+                   (sync)
+                   (channel))]
+        ; Store the peer ID in the channel's attributes for later.
+        (.. ch
+            (attr peer-attr)
+            (set (node-id peer)))
+        ch))))
 
 (defn ^Channel conn
   "Find or create a client to the given peer."
   [node peer]
-  (let [conns (:conns node)]
+  (let [id    (node-id peer)
+        conns (:conns node)]
     ; Standard double-locking strategy
-    (or (get conns peer)
+    (or (get @conns id)
         ; Open a connection
         (let [conn (connect node peer)]
           ; Lock and see if we lost a race
           (locking conns
-            (if-let [existing-conn (get @conns peer)]
+            (if-let [existing-conn (get @conns id)]
               (do
                 ; Abandon new conn
                 (.close ^Channel conn)
                 existing-conn)
               (do
                 ; Use new conn
-                (swap! conns assoc peer conn)
+                (swap! conns assoc id conn)
                 conn)))))))
 
 (defn send!
   "Sends a message to a peer."
   [node peer msg]
+  (let [c (conn node peer)]
+    (.write c msg))
+  node)
+
+(defn send-sync!
+  "Sends a message to a peer, blocking for the write to complete."
+  [node peer msg]
   (-> (conn node peer)
-      (.write conn msg))
+      (.write msg)
+      (.sync))
   node)
 
 (defn node
@@ -234,12 +269,15 @@
   "Given a set of n functions, returns a function which invokes each function
   with a received message, returning the first non-nil return value. The first
   function which returns non-nil terminates execution."
-  [fns]
-  (fn compiled-handler [msg]
-    (loop [fns fns]
-      (if-let [value ((first fns) msg)]
-        value
-        (recur (rest fns))))))
+  [functions]
+  (if (empty? functions)
+    (constantly nil)
+    (fn compiled-handler [msg]
+      (loop [[f & fns] functions]
+        (when f
+          (if-let [value (f msg)]
+            value
+            (recur fns)))))))
 
 (defn add-handler!
   "Registers a handler for incoming messages."
@@ -248,21 +286,57 @@
     (if (deref (:handler node))
       (throw (IllegalStateException.
                "node already running; can't add handlers now"))
-      (swap! (:handlers node) conj f))))
+      (swap! (:handlers node) conj f)))
+  node)
+
+(defn started?
+  "Is node started?"
+  [node]
+  (not (nil? @(:handler node))))
 
 (defn start!
   "Starts the node, when all handlers have been registered."
   [node]
   (locking (:handler node)
-    (when-not (deref (:handler node))
+    (when-not (started? node)
       (let [handler (compile-handler (deref (:handlers node)))]
         (reset! (:handler node) handler) 
         (reset! (:server node) (server node))
-        (reset! (:client node) (client node))))))
+        (reset! (:client node) (client node)))))
+  node)
+
+(defn close-conns!
+  "Closes all open connections on a node."
+  [node]
+  (doseq [[peer ^Channel channel] @(:conns node)]
+    (.close channel)))
+
+(defn shutdown-client!
+  "Shuts down a netty client for a node."
+  [client]
+  (when client
+    (let [^NioEventLoopGroup g (:group client)]
+      (.shutdown g)
+      (.awaitTermination g 30 TimeUnit/SECONDS))))
+
+(defn shutdown-server!
+  "Shuts down a netty server for a node."
+  [server]
+  (when server
+    (let [^NioEventLoopGroup g1 (:boss-group server)
+          ^NioEventLoopGroup g2 (:worker-group server)]
+      (.shutdown g1)
+      (.shutdown g2)
+      (.awaitTermination g1 30 TimeUnit/SECONDS)
+      (.awaitTermination g2 30 TimeUnit/SECONDS))))
 
 (defn shutdown!
-  "Shuts down a node. May only be called once."
+  "Shuts down a node."
   [node]
-  (shutdown-client! @(:client node))
-  (shutdown-server! @(:server node))
-  (reset! (:conns node) {}))
+  (locking (:handler node)
+    (close-conns! node)
+    (shutdown-client! @(:client node))
+    (shutdown-server! @(:server node))
+    (reset! (:conns node) {})
+    (reset! (:handler node) nil)
+    node))

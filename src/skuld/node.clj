@@ -35,7 +35,6 @@
                            (swap! vnodes assoc part true)
                            (locking *out*
                              (println "\n" part "online")))
-                
 
                   (:offline :DROPPED [part m c]
                             (locking *out*
