@@ -55,3 +55,6 @@
       (is (= limit @x))
 
       (finally (dorun (pmap shutdown! nodes))))))
+
+(deftest req-rsp-test
+  "Sends a request and blocks for a response.")

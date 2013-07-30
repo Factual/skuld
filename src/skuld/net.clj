@@ -340,3 +340,16 @@
     (reset! (:conns node) {})
     (reset! (:handler node) nil)
     node))
+
+; High-level messaging primitives
+
+; A Request represents a particular request made to N nodes. It includes a
+; unique identifier, the time (in nanoTime) the request is valid until, some
+; debugging information, the number of responses necessary to satisfy the
+; request, and a mutable list of responses received.
+(defrecord Request [^bytes id ^long max-time debug ^int r responses])
+
+(defn new-request
+  "Constructs a new Request. Automatically generates an ID, and computes the
+  max-time by adding the timeout to the current time."
+  [timeout debug r])

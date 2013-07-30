@@ -10,4 +10,10 @@
                  [clj-helix "0.1.0-SNAPSHOT"]
                  [io/netty/netty "4.0.0.Alpha8"]
                  [com.taoensso/nippy "2.0.0"]
-                 [com.google.protobuf/protobuf-java "2.5.0"]])
+                 [com.google.protobuf/protobuf-java "2.5.0"]
+                 [org.clojure/data.codec "0.1.0"]]
+  :profiles {:dev {:dependencies [[criterium "0.4.1"]]}}
+  :test-selectors {:default (fn [x] (not (or (:integration x)
+                                             (:time x)
+                                             (:bench x))))
+                   :bench :bench})
