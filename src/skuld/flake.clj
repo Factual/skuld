@@ -13,41 +13,44 @@
 
   Regressions in time are not allowed; Flake will periodically serialize the
   current time to disk to prevent regressions."
+  (:require [primitive-math :as p])
+  (:use     [potemkin :only [deftype+]])
   (:import (java.lang.management ManagementFactory)
            (java.net InetAddress
                      NetworkInterface)
+           (java.nio ByteBuffer)
            (java.security MessageDigest)
            (java.util Arrays)
            (java.util.concurrent.atomic AtomicInteger)))
-
+           
 (defonce initialized (atom false))
 
 ; Cached state
 (declare time-offset*)
-(declare node-id*)
-(declare pid*)
+(declare ^"[B" node-fragment*)
 
 ; Mutable state
-(declare counter)
+(deftype+ Counter [^long time ^int count])
+(defonce counter (atom (Counter. Long/MIN_VALUE Integer/MIN_VALUE)))
 
 (defn pid
   "Process identifier, such as it is on the JVM. :-/"
   []
   (let [name (.. ManagementFactory getRuntimeMXBean getName)]
-    (Integer. (get (re-find #"^(\d+).*" name) 1))))
+    (Integer. ^String (get (re-find #"^(\d+).*" name) 1))))
 
-(defn node-id
+(defn ^"[B" node-id
   "We take all hardware addresses, sort them bytewise, concatenate, hash, and
   truncate to 48 bits."
   []
   (let [addrs (->> (NetworkInterface/getNetworkInterfaces)
                    enumeration-seq
-                   (map #(.getHardwareAddress %))
+                   (map #(.getHardwareAddress ^NetworkInterface %))
                    (remove nil?))
         md    (MessageDigest/getInstance "SHA-1")]
     (assert (< 0 (count addrs)))
     (doseq [addr addrs]
-      (.update md addr))
+      (.update md ^bytes addr))
     ; 6 bytes is 48 bits
     (Arrays/copyOf (.digest md) 6)))
 
@@ -74,8 +77,18 @@
   "Returns a linearized time in milliseconds, roughly corresponding to time
   since the epoch."
   []
-  (quot (+ time-offset* (System/nanoTime))
-        1000000))
+  (p/div (p/+ (unchecked-long time-offset*) (System/nanoTime))
+         1000000))
+
+(defn node-fragment
+  "Constructs an eight-byte long byte array containing the node ID and process
+  ID."
+  []
+  (let [a (byte-array 8)]
+    (doto (ByteBuffer/wrap a)
+      (.put (node-id))
+      (.putShort (unchecked-short (pid))))
+    a))
 
 (defn init!
   "Initializes the flake generator state."
@@ -83,27 +96,33 @@
   (locking initialized
     (if (false? @initialized)
       (do
-        (def time-offset* (mean-time-offset 10))
-        (def node-id*     (node-id))
-        (def pid*         (pid))
-        (def counter      (atom [(linear-time) 0]))
+        (def ^long  time-offset*   (mean-time-offset 10))
+        (def ^"[B"  node-fragment* (node-fragment))
 
         (reset! initialized true)))))
 
-(defn count!
+(defn ^long count!
   "Increments and gets the count for a given time."
   [t']
-  (let [counter (swap! counter
-                       (fn [[t count]]
-                         (cond
-                           (< t t') [t' 0]
-                           (= t t') [t (inc count)]
-                           :else (throw (IllegalStateException.
-                                          "time can't flow backwards.")))))]
-    (get counter 1)))
+  (.count ^Counter (swap! counter
+                          (fn [^Counter c]
+                            (cond
+                              (< (.time c) t') (Counter. t' Integer/MIN_VALUE)
+                              (= (.time c) t') (Counter. t' (p/inc (.count c)))
+                              :else (throw (IllegalStateException.
+                                             "time can't flow backwards.")))))))
 
-(defn id
-  "Generate a new flake ID."
+(defn ^bytes id
+  "Generate a new flake ID; returning a byte array."
   []
-  (let [t (linear-time)]
-    [t (count! t) node-id* pid*]))
+  (let [t (linear-time)
+        b (ByteBuffer/allocate 20)]
+      (.putLong b t)
+      (.putInt b (count! t))
+      (.put b node-fragment*)
+      (.array b)))
+
+(defn byte-buffer
+  "Wraps a byte[] in a ByteBuffer."
+  [^bytes b]
+  (ByteBuffer/wrap b))
