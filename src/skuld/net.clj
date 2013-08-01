@@ -3,15 +3,19 @@
   connections encapsulated in a single stateful component. Allows users to
   register callbacks to receive messages."
   (:require [clojure.edn :as edn]
-            [taoensso.nippy :as nippy])
-;  (:use clojure.tools.logging) 
-  (:import (java.io ByteArrayInputStream
+            [taoensso.nippy :as nippy]
+            [skuld.flake :as flake])
+  (:use clojure.tools.logging) 
+  (:import (com.aphyr.skuld Bytes)
+           (java.io ByteArrayInputStream
                     DataInputStream
                     InputStreamReader
                     PushbackReader)
            (java.net InetSocketAddress)
+           (java.nio.charset Charset)
            (java.util List)
-           (java.util.concurrent TimeUnit)
+           (java.util.concurrent TimeUnit
+                                 CountDownLatch)
            (io.netty.bootstrap Bootstrap
                                ServerBootstrap)
            (io.netty.buffer ByteBuf
@@ -40,11 +44,12 @@
 (defn log-print
   [_ & things]
   (apply println things))
-(defn log
+(defn log-
   [& things]
   (apply send-off logger log-print things))
 
 (declare started?)
+(declare handle-response!)
 
 (defonce event-executor
   (DefaultEventExecutorGroup. 16))
@@ -67,6 +72,7 @@
                   i  (InputStreamReader. is)
                   r  (PushbackReader. i)]
         (binding [*read-eval* false]
+;          (prn "Got" (.toString buffer (Charset/forName "UTF-8")))
           (edn/read r))))))
 
 (defn nippy-codec []
@@ -85,8 +91,9 @@
           (nippy/thaw a))))))
 
 (defn handler
-  "Returns a Netty handler that calls f with its messages, and writes
-  non-nil return values back."
+  "Returns a Netty handler that calls f with its messages, and writes non-nil
+  return values back. Response will automatically have :request-id assoc'd into
+  them."
   [f]
   (proxy [ChannelInboundMessageHandlerAdapter] [(into-array Class [Object])]
     (messageReceived [^ChannelHandlerContext ctx message]
@@ -96,7 +103,7 @@
                                    (println "Node handler caught:")
                                    (.printStackTrace t))
                                  nil))]
-        (.write ctx response)))))
+        (.write ctx (assoc response :request-id (:request-id message)))))))
 
 (defonce peer-attr
   (AttributeKey. "skuld-peer"))
@@ -121,7 +128,7 @@
                   (pipeline)
                   (addLast "fdecoder" (protobuf-varint32-frame-decoder))
                   (addLast "fencoder" protobuf-varint32-frame-encoder)
-                  (addLast "codec" (edn-codec))
+                  (addLast "codec" (nippy-codec))
                   (addLast event-executor "handler"
                           (handler @(:handler node))))))))
 
@@ -153,6 +160,18 @@
                      (dissoc conns peer)
                      conns))))))))
 
+(defn client-response-handler
+  "When messages arrive, routes them through the node's request map."
+  [node]
+  (let [requests (:requests node)]
+    (proxy [ChannelInboundMessageHandlerAdapter] [(into-array Class [Object])]
+      (messageReceived [^ChannelHandlerContext ctx message]
+        (when-let [id (:request-id message)]
+          (try
+            (handle-response! requests id message)
+            (catch Throwable t
+              (warn t "node handler caught"))))))))
+
 (defn client
   [node]
   (let [bootstrap ^Bootstrap (Bootstrap.)
@@ -169,10 +188,10 @@
                           (pipeline)
                           (addLast "fdecoder" (protobuf-varint32-frame-decoder))
                           (addLast "fencoder" protobuf-varint32-frame-encoder)
-                          (addLast "codec" (edn-codec))
+                          (addLast "codec" (nippy-codec))
                           (addLast "inactive" (inactive-client-handler node))
                           (addLast event-executor "handler"
-                                  (handler @(:handler node))))))))
+                                  (client-response-handler node)))))))
       {:bootstrap bootstrap
        :group group-}
 
@@ -245,26 +264,6 @@
       (.sync))
   node)
 
-(defn node
-  "Creates a new network node. Options:
-  
-  :host
-  :port
-  :handler   A function which accepts messages from other nodes.
-
-  Handlers are invoked with each message, and may return an response to be sent
-  back to the client."
-  [opts]
-  (let [host (get opts :host "127.0.0.1")
-        port (get opts :port 13000)]
-    {:host host
-     :port port
-     :handlers (atom [])
-     :handler (atom nil)
-     :server (atom nil)
-     :client (atom nil)
-     :conns (atom {})}))
-
 (defn compile-handler
   "Given a set of n functions, returns a function which invokes each function
   with a received message, returning the first non-nil return value. The first
@@ -289,6 +288,138 @@
       (swap! (:handlers node) conj f)))
   node)
 
+; High-level messaging primitives
+
+; A Request represents a particular request made to N nodes. It includes a
+; unique identifier, the time (in nanoTime) the request is valid until, some
+; debugging information, the number of responses necessary to satisfy the
+; request, and a mutable list of responses received. Finally, takes a function
+; to invoke with responses, when r have been accrued.
+(defrecord Request [debug ^bytes id ^long max-time ^int r responses f])
+
+(defn ^Request new-request
+  "Constructs a new Request. Automatically generates an ID, and computes the
+  max-time by adding the timeout to the current time.
+  
+  Options:
+  
+  :debug    Debugging info
+  :timeout  Milliseconds to wait
+  :r        Number of responses to await
+  :f        A callback to receive response"
+  [opts]
+  (Request. (:debug opts)
+            (flake/id)
+            (+ (flake/linear-time) (get opts :timeout 5000))
+            (get opts :r 1)
+            (atom (list))
+            (:f opts)))
+
+(defn request!
+  "Given a node, sends a message to several nodes, and invokes f when r have
+  responded within the timeout. The message must be a map, and a :request-id
+  field will be automatically assoc'ed on to it. Returns the Request. Options:
+
+  :debug
+  :timeout
+  :r
+  :f"
+  [node peers opts msg]
+  (let [req (new-request opts)
+        id  (.id req)
+        msg (assoc msg :request-id id)]
+
+    ; Save request
+    (swap! (:requests node) assoc (Bytes. id) req)
+
+    ; Send messages
+    (doseq [peer peers]
+      (send! node peer msg))))
+
+(defmacro req!
+  "Like request!, but with the body captured into the callback function.
+  Captures file and line number and merges into the debug map.
+
+  (req! node some-peers {:timeout 3 :r 2}
+    {:type :anti-entropy :keys [a b c]}
+  
+    [responses]
+    (assert (= 3 responses))
+    (doseq [r responses]
+      (prn :got r)))"
+  [node peers opts msg binding-form & body]
+  (let [debug (meta &form)]
+    `(let [opts# (-> ~opts
+                     (update-in [:debug] merge ~debug)
+                     (assoc :f (fn ~binding-form ~@body)))]
+       (request! ~node ~peers opts# ~msg))))
+
+(defn expired-request?
+  "Is the given request past its timeout?"
+  [request]
+  (< (:max-time request) (flake/linear-time)))
+
+(defn gc-requests!
+  "Given an atom mapping ids to Requests, expires timed-out requests."
+  [reqs]
+  (->> reqs
+       deref
+       (filter (comp expired-request? val))
+       keys
+       (map (partial swap! reqs dissoc))
+       dorun))
+
+(defn periodically-gc-requests!
+  "Starts a thread to GC requests. Returns a promise which, when set to false,
+  shuts down."
+  [reqs]
+  (let [p (promise)]
+    (future
+      (loop []
+        (when (deref p 1000 true)
+          (try
+            (gc-requests! reqs)
+            (catch Throwable t
+              (warn t "Caught while GC-ing request map")))
+          (recur))))
+    p))
+
+(defn handle-response!
+  "Given an atom mapping ids to Requests, slots this response into the
+  appropriate request. When the response is fulfilled, removes it from the
+  requests atom."
+  [reqs id response]
+  (let [id (Bytes. id)]
+    (when-let [req (get @reqs id)]
+      (let [responses (swap! (.responses req) conj response)]
+        (when (= (:r req) (count responses))
+          (swap! reqs dissoc id)
+          ((.f req) responses))))))
+
+; Node constructor
+(defn node
+  "Creates a new network node. Options:
+  
+  :host
+  :port
+  :handler   A function which accepts messages from other nodes.
+
+  Handlers are invoked with each message, and may return an response to be sent
+  back to the client."
+  [opts]
+  (let [host (get opts :host "127.0.0.1")
+        port (get opts :port 13000)]
+    {:host host
+     :port port
+     :handlers (atom [])
+     :handler  (atom nil)
+     :server   (atom nil)
+     :client   (atom nil)
+     :conns    (atom {})
+     :gc       (atom nil)
+     :requests (atom {})}))
+
+;; Lifecycle management--start, stop, etc.
 (defn started?
   "Is node started?"
   [node]
@@ -302,8 +433,9 @@
       (let [handler (compile-handler (deref (:handlers node)))]
         (reset! (:handler node) handler) 
         (reset! (:server node) (server node))
-        (reset! (:client node) (client node)))))
-  node)
+        (reset! (:client node) (client node))
+        (reset! (:gc     node) (periodically-gc-requests! (:requests node)))
+        node))))
 
 (defn close-conns!
   "Closes all open connections on a node."
@@ -337,19 +469,8 @@
     (close-conns! node)
     (shutdown-client! @(:client node))
     (shutdown-server! @(:server node))
+    (deliver @(:gc node) false)
+    (reset! (:requests node) {})
     (reset! (:conns node) {})
     (reset! (:handler node) nil)
     node))
-
-; High-level messaging primitives
-
-; A Request represents a particular request made to N nodes. It includes a
-; unique identifier, the time (in nanoTime) the request is valid until, some
-; debugging information, the number of responses necessary to satisfy the
-; request, and a mutable list of responses received.
-(defrecord Request [^bytes id ^long max-time debug ^int r responses])
-
-(defn new-request
-  "Constructs a new Request. Automatically generates an ID, and computes the
-  max-time by adding the timeout to the current time."
-  [timeout debug r])

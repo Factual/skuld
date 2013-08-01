@@ -1,16 +1,25 @@
 (ns skuld.net-test
   (:use skuld.net
-        clojure.test))
+        clojure.test)
+  (:import java.util.concurrent.CountDownLatch)
+  (:require [skuld.flake :as flake]
+            [clojure.set :as set]))
+
+(flake/init!)
 
 (deftest solipsist
   (let [node (node {:host "127.0.0.1" :port 13000})
         log  (atom [])
-        msgs [1 2 3 {:hi 2} #{:a "foo" [1/2 'yo]} :done]
+        msgs [{:x 1}
+              {:x "foo"}
+              {:x {:hi 2}}
+              {:set #{:a "foo"} :vec [1/2 'yo]}
+              {:done? true}]
         done (promise)]
     (try
       (add-handler! node (fn [msg]
                            (swap! log conj msg)
-                           (when (= :done msg)
+                           (when (:done? msg)
                              (deliver done true))
                            nil))
       (start! node)
@@ -27,7 +36,7 @@
         limit 1000
         nodes (->> (range n)
                    (map (fn [i] (node {:port (+ 13000 i)}))))
-        x     (atom 0)                          
+        x     (atom 0)
         done  (promise)]
     (try
       (->> nodes
@@ -56,5 +65,71 @@
 
       (finally (dorun (pmap shutdown! nodes))))))
 
-(deftest req-rsp-test
-  "Sends a request and blocks for a response.")
+(deftest echo-test
+  "Sends a request and waits for an echo server to respond."
+  (let [a (node {:port 13001})
+        b (node {:port 13002})
+        done (promise)]
+    (try
+      ; Make B an echo server.
+      (add-handler! b identity)
+      (start! a)
+      (start! b)
+
+      (req! a [b] {} {:echo? :echo!}
+            [responses]
+            (is (= 1 (count responses)))
+            (deliver done true))
+
+      (is (deref done 5000 false))
+
+      (finally
+        (shutdown! a)
+        (shutdown! b)))))
+
+(deftest scatter-test
+  "Broadcasts requests to several nodes."
+  (let [n 5
+        nodes (->> (range n)
+                   (map (fn [i] (node {:port (+ 13000 i)}))))
+        responses  (promise)
+        done       (CountDownLatch. n)]
+    (try
+      (doseq [node nodes]
+        (add-handler! node (fn [msg]
+                             (.countDown done)
+                             {:i-am (:port node)})))
+      (dorun (pmap start! nodes))
+
+      (req! (first nodes) nodes {:r 3} {}
+            [rs]
+            (deliver responses rs))
+
+      (or (deref responses 5000 false) (throw (RuntimeException. "stuck")))
+      (is (<= 3 (count @responses)))
+      (is (= (distinct @responses) @responses))
+      (is (set/subset? (set (map :i-am @responses)) (set (map :port nodes))))
+
+      (.await done)
+
+      (finally
+        (dorun (pmap shutdown! nodes))))))
+
+(deftest timeout-test
+  "Verifies that timeouts work correctly."
+  (let [a (node {:port 13000})
+        b (node {:port 13001})
+        done (promise)]
+    (try
+      (add-handler! b (fn [x] (Thread/sleep 3000) (deliver done true) x))
+      (dorun (pmap start! [a b]))
+
+      (req! a [b] {:r 1 :timeout 1000} {:hi :there}
+            [responses]
+            (is false))
+      
+      @done
+      (Thread/sleep 100)
+
+      (finally
+        (dorun (pmap shutdown! [a b]))))))
