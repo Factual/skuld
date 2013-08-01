@@ -51,9 +51,9 @@
               (prn (keys @vnodes))
               (recur)))
 
-;        controller  (helix/controller {:zookeeper zk
-;                                       :cluster cluster
-;                                       :instance {:host host :port port}})
+        controller  (helix/controller {:zookeeper zk
+                                       :cluster cluster
+                                       :instance {:host host :port port}})
         participant (helix/participant {:zookeeper zk
                                         :cluster cluster
                                         :instance {:host host :port port}
@@ -74,7 +74,7 @@
      :router router
 ;     :clock-sync clock-sync
      :participant participant
-     :controller nil
+     :controller controller
      :vnodes vnodes}))
 
 (defn controller
