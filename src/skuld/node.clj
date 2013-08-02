@@ -2,7 +2,7 @@
   "A single node in the Skuld cluster. Manages any number of vnodes."
   (:require [skuld.vnode :as vnode]
             [skuld.net :as net]
-;            [skuld.clock-sync :as clock-sync]
+            [skuld.clock-sync :as clock-sync]
             [clj-helix.manager :as helix]
             clj-helix.fsm
             clj-helix.route))
@@ -48,7 +48,7 @@
         _ (future
             (loop []
               (Thread/sleep 1000)
-              (prn (keys @vnodes))
+              (prn :vnodes (keys @vnodes))
               (recur)))
 
         controller  (helix/controller {:zookeeper zk
@@ -59,11 +59,9 @@
                                         :instance {:host host :port port}
                                         :fsm fsm})
         router (clj-helix.route/router! participant)
-
         net (net/node {:host host
-                       :port port})]
-
-;        clock-sync (clock-sync/clock-sync net router)]
+                       :port port})
+        clock-sync (clock-sync/service net router vnodes)]
 
     ; Start network node
     (net/start! net)
@@ -72,7 +70,7 @@
      :port port
      :net net
      :router router
-;     :clock-sync clock-sync
+     :clock-sync clock-sync
      :participant participant
      :controller controller
      :vnodes vnodes}))

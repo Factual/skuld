@@ -1,36 +1,49 @@
-;(ns skuld.clock-sync
-;  "Exchanges heartbeats with peers to ensure clocks are synchronized."
-;  (:require [skuld.net :as net]
-;            [clj-helix.route :as route]))
-;
-;(defn clock-sync
-;  "Creates a new clock-sync service."
-;  [net router]
-;  ; Register handler
-;  (net/add-handler!
-;    (fn [msg]
-;      (when (= (:type msg) :clock-sync)
-;        (prn "Clock sync msg received:" (:time msg)))))
-;  
-;  (let [running (promise)]
-;    ; Periodically emit heartbeats to peers
-;    (future
-;      (loop []
-;        (try
-;          (doseq [peer (route/instances router :skuld :peer)]
-;            (prn "Emitting clock-sync message to" peer)
-;            (net/send! net peer {:type :clock-sync
-;                                 :time (double
-;                                         (/ (System/currentTimeMillis) 1000))}))
-;          (catch Throwable t
-;            (prn "clock-sync caught" t)))
-;        
-;        (when-not (deref running 1000 true)
-;          (recur))))
-;
-;    running))
-;
-;(defn shutdown!
-;  "Stop a clock-sync service."
-;  [clock-sync]
-;  (deliver clock-sync false))
+(ns skuld.clock-sync
+  "Exchanges heartbeats with peers to ensure clocks are synchronized."
+  (:use clojure.tools.logging)
+  (:require [skuld.net :as net]
+            [skuld.flake :as flake]
+            [clj-helix.route :as route]))
+
+(defn service
+  "Creates a new clock-sync service."
+  [net router vnodes]
+  ; Register handler
+  (net/add-handler! net
+                    (fn [msg]
+                      (when (= (:type msg) :clock-sync)
+                        (let [delta (- (flake/linear-time) (:time msg))]
+                          (when (< 30000 delta)
+                            (warn "Clock skew with"
+                                  (pr-str (:node msg))
+                                  "is"
+                                  delta
+                                  "milliseconds!"))))))
+
+  (let [running (promise)]
+    ; Periodically emit heartbeats to peers
+    (future
+      (loop []
+        (try
+          (->> vnodes
+               deref
+               keys
+               (mapcat #(route/instances router :skuld % :peer))
+               set
+               (map (fn [peer]
+                      (net/send! net peer {:type :clock-sync
+                                           :node (select-keys net [:host :port])
+                                           :time (flake/linear-time)})))
+               dorun)
+          (catch Throwable t
+            (warn t "clock-sync caught")))
+        
+        (when (deref running 1000 true)
+          (recur))))
+
+    running))
+
+(defn shutdown!
+  "Stop a clock-sync service."
+  [clock-sync]
+  (deliver clock-sync false))

@@ -2,7 +2,8 @@
   (:use [clj-helix.logging :only [mute]]
         [clojure.tools.cli :only [cli]])
   (:require [skuld.admin :as admin]
-            [skuld.node :as node])
+            [skuld.node :as node]
+            [skuld.flake :as flake])
   (:import (sun.misc Signal SignalHandler))
   (:gen-class))
 
@@ -71,16 +72,16 @@
     @(promise)))
 
 (defn start [& args]
-  (mute
-    (let [[opts _ _]  (apply cli args node-spec)
-          node        (node/node opts)]
+  (flake/init!)
+  (let [[opts _ _]  (apply cli args node-spec)
+        node        (node/node opts)]
 
-      (.addShutdownHook (Runtime/getRuntime)
-                        (Thread. (bound-fn []
-                                   (node/shutdown! node))))
+    (.addShutdownHook (Runtime/getRuntime)
+                      (Thread. (bound-fn []
+                                 (node/shutdown! node))))
 
-      (prn :started node)
-      @(promise))))
+    (prn :started node)
+    @(promise)))
 
 (defn -main
   [cmd & args]
