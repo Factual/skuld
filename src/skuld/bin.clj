@@ -92,4 +92,5 @@
                "start" start)
              args)
     (catch Throwable t
-      (.printStackTrace t))))
+      (.printStackTrace t)
+      (System/exit 1))))

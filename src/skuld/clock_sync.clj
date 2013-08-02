@@ -38,7 +38,7 @@
           (catch Throwable t
             (warn t "clock-sync caught")))
         
-        (when (deref running 1000 true)
+        (when (deref running 10000 true)
           (recur))))
 
     running))

@@ -354,6 +354,17 @@
                      (assoc :f (fn ~binding-form ~@body)))]
        (request! ~node ~peers opts# ~msg))))
 
+(defmacro sync-req!
+  "Like request!, but *returns* a list of responses, synchronously."
+  [node peers opts msg]
+  (let [debug (meta &form)]
+    `(let [p# (promise)
+           opts# (-> ~opts
+                     (update-in [:debug] merge ~debug)
+                     (assoc :f (fn [rs#] (deliver p# rs#))))]
+       (request! ~node ~peers opts# ~msg)
+       @p#)))
+
 (defn expired-request?
   "Is the given request past its timeout?"
   [request]
@@ -362,12 +373,12 @@
 (defn gc-requests!
   "Given an atom mapping ids to Requests, expires timed-out requests."
   [reqs]
-  (->> reqs
-       deref
-       (filter (comp expired-request? val))
-       keys
-       (map (partial swap! reqs dissoc))
-       dorun))
+  (let [expired (->> reqs
+                     deref
+                     (filter (comp expired-request? val)))]
+    (doseq [[id ^Request req] expired]
+      (swap! reqs dissoc id)
+      ((.f req) @(.responses req)))))
 
 (defn periodically-gc-requests!
   "Starts a thread to GC requests. Returns a promise which, when set to false,
