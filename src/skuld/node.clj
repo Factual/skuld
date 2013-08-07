@@ -4,6 +4,7 @@
             [skuld.net :as net]
             [skuld.flake :as flake]
             [skuld.clock-sync :as clock-sync]
+            [skuld.aae :as aae]
             [clj-helix.manager :as helix]
             clj-helix.admin
             clj-helix.fsm
@@ -63,13 +64,12 @@
   (let [id (flake/id)
         task (assoc (:task msg) :id id)
         preflist (preflist router num-partitions id)]
-    (prn "Proxying enqueue to" (map :port preflist))
+;    (prn "Proxying enqueue to" (map :port preflist))
     (let [r (get msg :r 1)
           responses (net/sync-req! net preflist {:r r}
                                    {:type    :enqueue-local
                                     :task    task})
           acks (remove :error responses)]
-      (prn :responses responses)
       (if (<= r (count acks))
         {:n         (count acks)
          :task      task}
@@ -82,7 +82,6 @@
   [num-partitions vnodes msg]
   (let [task (:task msg)
         part (partition-name num-partitions (:id task))]
-    (prn "Locally enqueuing" task "in" part)
     (if-let [vnode (get @vnodes part)]
       (do (vnode/enqueue vnode task)
           {:task-id (:id task)})
@@ -93,7 +92,6 @@
   [participant net router vnodes]
   (let [num-partitions (num-partitions participant)
         n              (num-replicas participant)]
-    (prn num-partitions :partitions)
     (fn handler [msg]
       (case (:type msg)
         :enqueue (enqueue net router num-partitions n vnodes msg)
@@ -147,8 +145,8 @@
         _ (future
             (loop []
               (Thread/sleep 10000)
-              (prn :vnodes (keys @vnodes))
-              (prn :tasks  (tasks vnodes))
+;              (prn :vnodes (keys @vnodes))
+              (prn (count (tasks vnodes)) "total tasks")
               (recur)))
 
         controller  (helix/controller {:zookeeper zk
@@ -161,7 +159,8 @@
         router (clj-helix.route/router! participant)
         net (net/node {:host host
                        :port port})
-        clock-sync (clock-sync/service net router vnodes)]
+        clock-sync (clock-sync/service net router vnodes)
+        aae        (aae/service net router vnodes)]
 
     (net/add-handler! net (handler participant net router vnodes))
 
@@ -173,6 +172,7 @@
      :net net
      :router router
      :clock-sync clock-sync
+     :aae aae
      :participant participant
      :controller controller
      :vnodes vnodes}))
@@ -199,8 +199,8 @@
 (defn shutdown!
   "Shuts down a node."
   [node]
-;  (when-let [c (:clock-sync node)]
-;    (clock-sync/shutdown! c))
+  (when-let [c (:clock-sync node)] (clock-sync/shutdown! c))
+  (when-let [aae (:aae node)]      (aae/shutdown! aae))
 
   (->> (select-keys node [:participant :controller])
        vals

@@ -10,11 +10,12 @@
                  [org.clojure/tools.logging "0.2.3"]
                  [clj-helix "0.1.0-SNAPSHOT"]
                  [io/netty/netty "4.0.0.Alpha8"]
-                 [com.taoensso/nippy "2.0.0"]
+                 [com.taoensso/nippy "2.1.0"]
                  [com.google.protobuf/protobuf-java "2.5.0"]
                  [org.clojure/data.codec "0.1.0"]
                  [primitive-math "0.1.2"]
-                 [potemkin "0.3.0"]]
+                 [potemkin "0.3.0"]
+                 [merkle "0.1.0-SNAPSHOT"]]
   :warn-on-reflection true
   :profiles {:dev {:dependencies [[criterium "0.4.1"]
                                   [com.google.guava/guava "14.0.1"]]}}

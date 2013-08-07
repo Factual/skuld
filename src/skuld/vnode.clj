@@ -9,15 +9,20 @@
   :partition
   :state"
   [opts]
-  {:partition (get opts partition)
+  {:partition (get opts :partition)
    :state (get opts :state :peer)
-   :tasks (atom {})})
+   :tasks (atom (sorted-map))})
 
 (defn enqueue
   "Enqueues a new task into this vnode."
   [vnode task]
-  (assert (:id task))
-  (swap! (:tasks vnode) assoc (Bytes. (:id task)) task))
+  (let [id (Bytes. (:id task))]
+    (swap! (:tasks vnode) assoc id (assoc task :id id))))
+
+(defn merge-task!
+  "Takes a task and merges it into this vnode."
+  [vnode task]
+  (swap! (:tasks vnode) update-in [(:id task)] task/merge-task task))
 
 (defn ids
   "All task IDs in this vnode."
