@@ -29,7 +29,6 @@
 (defn start-nodes!
   "Returns a vector of a bunch of started nodes."
   []
-  (prn "starting nodes")
   (->> (range 5)
        (pmap #(node/node {:port (+ 13000 %)}))
        doall))
@@ -39,11 +38,10 @@
   [nodes]
   (->> nodes (pmap node/shutdown!) doall))
 
-; Create cluster
-(use-fixtures :once (fn [f] (mute (ensure-cluster!) (f))))
+(use-fixtures :once
+              ; Start cluster
+              (fn [f] (mute (ensure-cluster!) (f)))
 
-; Start network
-(use-fixtures :each
               ; Start net
               (fn [f]
                 (binding [*net* (doto (net/node {:port 13100})
@@ -65,7 +63,7 @@
 (def byte-array-class ^:const (type (byte-array 0)))
 
 (deftest enqueue-test
-  "Enqueue a single task."
+  ; Enqueue a task
   (let [id (-> *net*
                (net/sync-req! [{:host "127.0.0.1" :port 13000}]
                               {}
@@ -74,4 +72,16 @@
                first
                :task
                :id)]
-    (is (instance? byte-array-class id))))
+    (is (instance? byte-array-class id))
+
+    ; Read it back
+    (let [task (-> *net*
+                   (net/sync-req! [(first *nodes*)]
+                         {:r 3}
+                         {:type :get-task
+                          :id id})
+                   first
+                   :task)]
+      (is (= task
+             {:id (Bytes. id)
+              :payload "hi there"})))))

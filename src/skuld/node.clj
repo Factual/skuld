@@ -5,6 +5,7 @@
             [skuld.flake :as flake]
             [skuld.clock-sync :as clock-sync]
             [skuld.aae :as aae]
+            [skuld.task :as task]
             [clj-helix.manager :as helix]
             clj-helix.admin
             clj-helix.fsm
@@ -87,6 +88,34 @@
           {:task-id (:id task)})
       {:error (str "I don't have partition" part "for task" (:id task))})))
 
+(defn get-task
+  "Gets the current state of a task."
+  [net router num-partitions n vnodes msg]
+  (let [id (:id msg)
+        preflist (preflist router num-partitions id)
+        r (get msg :r 1)
+        responses (net/sync-req! net preflist {:r r}
+                                 {:type :get-task-local
+                                  :id   id})
+        acks (remove :error responses)
+        task (->> responses (map :task) (reduce task/merge-task))]
+    (if (<= r (count acks))
+      {:n    (count acks)
+       :task task}
+      {:n    (count acks)
+       :task task
+       :error "not enough acks"
+       :responses responses})))
+
+(defn get-task-local
+  "Gets the current state of a task from a local vnode"
+  [num-partitions vnodes msg]
+  (let [id (:id msg)
+        part (partition-name num-partitions id)]
+    (if-let [vnode (get @vnodes part)]
+      {:task (vnode/get-task vnode id)}
+      {:error (str "I don't have partition" part "for task" id)})))
+
 (defn handler
   "Returns a fn which handles messages for a node."
   [participant net router vnodes]
@@ -94,8 +123,10 @@
         n              (num-replicas participant)]
     (fn handler [msg]
       (case (:type msg)
-        :enqueue (enqueue net router num-partitions n vnodes msg)
-        :enqueue-local (enqueue-local num-partitions vnodes msg)
+        :enqueue        (enqueue net router num-partitions n vnodes msg)
+        :enqueue-local  (enqueue-local num-partitions vnodes msg)
+        :get-task       (get-task net router num-partitions n vnodes msg)
+        :get-task-local (get-task-local num-partitions vnodes msg)
         nil))))
 
 (def fsm-def (clj-helix.fsm/fsm-definition

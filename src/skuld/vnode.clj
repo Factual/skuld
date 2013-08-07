@@ -24,6 +24,11 @@
   [vnode task]
   (swap! (:tasks vnode) update-in [(:id task)] task/merge-task task))
 
+(defn get-task
+  "Returns a specific task by ID."
+  [vnode id]
+  (-> vnode :tasks deref (get (Bytes. id))))
+
 (defn ids
   "All task IDs in this vnode."
   [vnode]
