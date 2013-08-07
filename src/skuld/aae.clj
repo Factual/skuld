@@ -62,6 +62,7 @@
   [net router vnodes]
   (let [running (promise)]
     (future
+      (Thread/sleep 10000)
       (loop []
         (try
           (->> vnodes

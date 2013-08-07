@@ -23,6 +23,7 @@
   (let [running (promise)]
     ; Periodically emit heartbeats to peers
     (future
+      (Thread/sleep 10000)
       (loop []
         (try
           (->> vnodes

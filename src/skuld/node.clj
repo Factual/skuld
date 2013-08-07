@@ -142,12 +142,12 @@
         vnodes  (atom {})
         fsm     (fsm vnodes)
 
-        _ (future
-            (loop []
-              (Thread/sleep 10000)
+;        _ (future
+;            (loop []
+;              (Thread/sleep 10000)
 ;              (prn :vnodes (keys @vnodes))
-              (prn (count (tasks vnodes)) "total tasks")
-              (recur)))
+;              (prn (count (tasks vnodes)) "total tasks")
+;              (recur)))
 
         controller  (helix/controller {:zookeeper zk
                                        :cluster cluster
@@ -201,6 +201,7 @@
   [node]
   (when-let [c (:clock-sync node)] (clock-sync/shutdown! c))
   (when-let [aae (:aae node)]      (aae/shutdown! aae))
+  (when-let [net (:net node)]      (net/shutdown! net))
 
   (->> (select-keys node [:participant :controller])
        vals
