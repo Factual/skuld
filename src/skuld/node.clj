@@ -114,18 +114,13 @@
     fsm-def
     (:offline :peer [part m c]
               (swap! vnodes assoc part
-                     (vnode/vnode {:partition part}))
-              (locking *out*
-                (println "\n" part "online")))
+                     (vnode/vnode {:partition part})))
 
-    (:offline :DROPPED [part m c]
-              (locking *out*
-                (println part "dropped->offline")))
+    (:offline :DROPPED [part m c])
 
     (:peer :offline [part m c]
            (locking *out*
-             (swap! vnodes dissoc part)
-             (prn part "Offline")))))
+             (swap! vnodes dissoc part)))))
 
 (defn node
   "Creates a new node with the given options.

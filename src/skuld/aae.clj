@@ -36,7 +36,6 @@
   "Given a vnode, hashes it and initiates a sync with peers."
   [net router vnode]
   ; Compute tree
-  (prn "Initiating AAE sync of" (:partition vnode)) 
   (let [t (-> vnode
               merkle-tree
               merkle/node->map)
@@ -46,7 +45,6 @@
 
     ; Broadcast tree to peers
     (doseq [peer peers]
-      (prn "Broadcasting initial merkle tree to" peer)
       (net/req! net [peer] {}
                 {:type :aae
                  :part (:partition vnode)
@@ -54,7 +52,6 @@
                 [[response]]
                 ; And if we get responses, merge em.
                 (when-let [updates (:updates response)]
-                  (prn "Merging" (count updates) "AAE updates")
                   (dorun (map (partial vnode/merge-task! vnode) updates)))))))
 
 (defn initiator

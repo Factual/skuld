@@ -6,12 +6,16 @@
             [skuld.node :as node]
             [skuld.flake :as flake]
             [skuld.net :as net]
-            clj-helix.admin))
+            clj-helix.admin)
+  (:import com.aphyr.skuld.Bytes))
 
 (flake/init!)
 
 (def admin
   (admin/admin {:partitions 2 :replicas 3}))
+
+(def ^:dynamic *net* nil)
+(def ^:dynamic *nodes* nil)
 
 (defn ensure-cluster!
   "Ensures a test cluster exists."
@@ -22,33 +26,52 @@
     (dotimes [i 7]
       (admin/add-node! admin {:host "127.0.0.1" :port (+ 13000 i)}))))
 
-(def nodes (atom []))
-
 (defn start-nodes!
-  "Spin up a few nodes and binds them to the nodes atom."
+  "Returns a vector of a bunch of started nodes."
   []
-  (prn "Starting nodes.")
+  (prn "starting nodes")
   (->> (range 5)
        (pmap #(node/node {:port (+ 13000 %)}))
-       doall
-       (reset! nodes))
-  (prn "Nodes started."))
+       doall))
 
 (defn shutdown-nodes!
-  "Shutdown nodes in the nodes atom."
-  []
-  (prn "Shutting down nodes.")
-  (->> nodes deref (pmap node/shutdown!) doall)
-  (reset! nodes [])
-  (prn "Nodes shutdown."))
+  "Shutdown a seq of nodes."
+  [nodes]
+  (->> nodes (pmap node/shutdown!) doall))
 
+; Create cluster
 (use-fixtures :once (fn [f] (mute (ensure-cluster!) (f))))
-(use-fixtures :each (fn [f]
-                      (mute
-                        (try
-                          (start-nodes!)
-                          (f)
-                          (finally
-                            (shutdown-nodes!))))))
 
-(deftest enqueue-test)
+; Start network
+(use-fixtures :each
+              ; Start net
+              (fn [f]
+                (binding [*net* (doto (net/node {:port 13100})
+                                  (net/start!))]
+                  (try
+                    (f)
+                    (finally
+                      (net/shutdown! *net*)))))
+
+              ; Start nodes
+              (fn [f]
+                (mute
+                  (binding [*nodes* (start-nodes!)]
+                    (try
+                      (f)
+                      (finally
+                        (shutdown-nodes! *nodes*)))))))
+
+(def byte-array-class ^:const (type (byte-array 0)))
+
+(deftest enqueue-test
+  "Enqueue a single task."
+  (let [id (-> *net*
+               (net/sync-req! [{:host "127.0.0.1" :port 13000}]
+                              {}
+                              {:type :enqueue
+                               :task {:payload "hi there"}})
+               first
+               :task
+               :id)]
+    (is (instance? byte-array-class id))))

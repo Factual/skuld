@@ -401,7 +401,7 @@
   requests atom."
   [reqs id response]
   (let [id (Bytes. id)]
-    (when-let [req (get @reqs id)]
+    (when-let [req ^Request (get @reqs id)]
       (let [responses (swap! (.responses req) conj response)]
         (when (= (:r req) (count responses))
           (swap! reqs dissoc id)
