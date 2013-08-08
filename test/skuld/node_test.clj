@@ -85,3 +85,19 @@
       (is (= task
              {:id (Bytes. id)
               :payload "hi there"})))))
+
+(deftest count-test
+  ; Enqueue a few tasks
+  (let [n 10]
+    (dotimes [i n]
+      (-> *net*
+          (net/sync-req! [{:host "127.0.0.1" :port 13000}]
+                         {}
+                         {:type :enqueue
+                          :task {:payload "sup"}})))
+    (let [res (-> *net*
+                  (net/sync-req! [{:host "127.0.0.1" :port 13000}]
+                                 {}
+                                 {:type :count-tasks})
+                  first)]
+      (is (< n (:count res))))))

@@ -22,14 +22,9 @@
         (when-let [vnode (get @vnodes part)]
           ; Diff against our local collection.
           (let [remote-tree (merkle/map->node (:tree msg))]
-;            (prn "Remote tree is" remote-tree)
-;            (prn "Local  tree is" (merkle-tree vnode))
-;            (prn "Identical regions are" (merkle/identical-ranges (merkle-tree vnode) remote-tree))
-;            (prn "Local tasks are" (seq @(:tasks vnode)))
             (let [diffs (merkle/diff @(:tasks vnode)
                                      (merkle-tree vnode)
                                      remote-tree)]
-              (prn (count diffs) "diffs with peer")
               {:updates (vals diffs)})))))))
 
 (defn sync-vnode!

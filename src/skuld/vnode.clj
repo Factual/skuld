@@ -35,6 +35,11 @@
   [vnode]
   (keys @(:tasks vnode)))
 
+(defn count-tasks
+  "How many tasks are in this vnode?"
+  [vnode]
+  (count @(:tasks vnode)))
+
 (defn tasks
   "All tasks in this vnode."
   [vnode]

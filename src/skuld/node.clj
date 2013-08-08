@@ -24,6 +24,11 @@
       Arrays/hashCode
       (mod num-partitions))))
 
+(defn all-partitions
+  "A list of all partitions in the system."
+  [num-partitions]
+  (map (partial str "skuld_") (range num-partitions)))
+
 (defn preflist
   "Returns a set of nodes responsible for a given ID."
   [router num-partitions ^bytes id]
@@ -65,7 +70,6 @@
   (let [id (flake/id)
         task (assoc (:task msg) :id id)
         preflist (preflist router num-partitions id)]
-;    (prn "Proxying enqueue to" (map :port preflist))
     (let [r (get msg :r 1)
           responses (net/sync-req! net preflist {:r r}
                                    {:type    :enqueue-local
@@ -116,10 +120,37 @@
       {:task (vnode/get-task vnode id)}
       {:error (str "I don't have partition" part "for task" id)})))
 
-(defn claim
-  "Claims a task."
-  [net router num-partitions n vnodes msg]) 
+(defn count-tasks
+  "Estimates the total number of tasks in the system."
+  [net router num-partitions n vnodes msg]
+  (let [parts  (set (all-partitions num-partitions))
+        counts (atom {})
+        done   (promise)]
 
+    ; Issue requests to all nodes for their local couns
+    (doseq [peer (route/instances router :skuld :peer)]
+      (net/req! net [peer] {:r 1} {:type :count-tasks-local}
+                [[response]]
+                (let [remote-counts (:partitions response)
+                      counts (swap! counts
+                                    (partial merge-with max remote-counts))]
+                  (when (= parts (set (keys counts)))
+                    ; We've accrued a response for each partition.
+                    (deliver done
+                             {:partitions counts
+                              :count (reduce + (vals counts))})))))
+
+    (deref done 5000 {:error "timed out" :partitions @counts})))
+
+(defn count-tasks-local
+  "Estimates the total number of tasks on the local node."
+  [vnodes msg]
+  {:partitions
+   (reduce (fn [counts [k vnode]]
+             (assoc counts k (vnode/count-tasks vnode)))
+           {}
+           @vnodes)})
+  
 (defn handler
   "Returns a fn which handles messages for a node."
   [participant net router vnodes]
@@ -131,7 +162,9 @@
         :enqueue-local  (enqueue-local num-partitions vnodes msg)
         :get-task       (get-task net router num-partitions n vnodes msg)
         :get-task-local (get-task-local num-partitions vnodes msg)
-        nil))))
+        :count-tasks    (count-tasks net router num-partitions n vnodes msg)
+        :count-tasks-local (count-tasks-local vnodes msg)
+        {:error (str "unknown message type" (:type msg))}))))
 
 (def fsm-def (clj-helix.fsm/fsm-definition
                {:name   :skuld
