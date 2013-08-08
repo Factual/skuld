@@ -12,52 +12,75 @@
             [clj-helix.route :as route])
   (:import (java.util Arrays)))
 
+(defn vnodes
+  "Returns a map of partitions to vnodes for a node."
+  [node]
+  @(:vnodes node))
+
+(defn vnode
+  "Returns a particular vnode for a node."
+  [node partition-id]
+  (get (vnodes node) partition-id))
+
 (defn tasks
-  "Given an atom containing vnodes, emits all tasks for those vnodes."
-  [vnodes]
-  (mapcat vnode/tasks (vals @vnodes)))
+  "Given a node, emits all tasks for all vnodes."
+  [node]
+  (->> node vnodes vals (mapcat vnode/tasks)))
+
+(defn helix-admin
+  "Returns a HelixAdmin for a given node, via its participant."
+  [node]
+  (-> node :participant helix/admin))
+
+(defn cluster-name
+  "The name of a cluster a node is participating in."
+  [node]
+  (-> node :participant helix/cluster-name))
+
+(def num-partitions
+  "The number of partitions in the cluster."
+  (memoize (fn [node]
+             (-> node
+                 helix-admin
+                 (clj-helix.admin/resource-ideal-state
+                   (cluster-name node)
+                   :skuld)
+                 .getNumPartitions))))
+
+(def num-replicas
+  "How many replicas are there for the Skuld resource?"
+  (memoize (fn [node]
+             (-> node
+                 helix-admin
+                 (clj-helix.admin/resource-ideal-state
+                   (cluster-name node)
+                   :skuld)
+                 .getReplicas
+                 Integer.))))
 
 (defn partition-name
   "Calculates which partition is responsible for a given ID."
-  [num-partitions ^bytes id]
+  [node ^bytes id]
   (str "skuld_" (-> id
       Arrays/hashCode
-      (mod num-partitions))))
+      (mod (num-partitions node)))))
 
 (defn all-partitions
   "A list of all partitions in the system."
-  [num-partitions]
-  (map (partial str "skuld_") (range num-partitions)))
+  [node]
+  (->> node
+       num-partitions
+       range
+       (map (partial str "skuld_"))))
 
 (defn preflist
   "Returns a set of nodes responsible for a given ID."
-  [router num-partitions ^bytes id]
+  [node ^bytes id]
   (assert (not (nil? id)))
-  (route/instances router
+  (route/instances (:router node)
                    :skuld
-                   (partition-name num-partitions id)
+                   (partition-name node id)
                    :peer))
-
-(defn num-partitions
-  "The number of partitions in the cluster for a given participant."
-  [participant]
-  (-> participant
-      helix/admin
-      (clj-helix.admin/resource-ideal-state
-        (helix/cluster-name participant)
-        :skuld)
-      .getNumPartitions))
-
-(defn num-replicas
-  "How many replicas are there for the Skuld resource?"
-  [participant]
-  (-> participant
-      helix/admin
-      (clj-helix.admin/resource-ideal-state
-        (helix/cluster-name participant)
-        :skuld)
-      .getReplicas
-      Integer.))
 
 (defn majority
   "For N replicas, what would consititute a majority?"
@@ -66,12 +89,13 @@
 
 (defn enqueue
   "Proxies to enqueue-local on all nodes in the preflist for this task."
-  [net router num-partitions n vnodes msg]
+  [node msg]
   (let [id (flake/id)
-        task (assoc (:task msg) :id id)
-        preflist (preflist router num-partitions id)]
+        task (assoc (:task msg) :id id)]
     (let [r (get msg :r 1)
-          responses (net/sync-req! net preflist {:r r}
+          responses (net/sync-req! (:net node)
+                                   (preflist node id)
+                                   {:r r}
                                    {:type    :enqueue-local
                                     :task    task})
           acks (remove :error responses)]
@@ -84,21 +108,22 @@
 
 (defn enqueue-local
   "Enqueues a message on the local vnode for this task."
-  [num-partitions vnodes msg]
+  [node msg]
   (let [task (:task msg)
-        part (partition-name num-partitions (:id task))]
-    (if-let [vnode (get @vnodes part)]
+        part (partition-name node (:id task))]
+    (if-let [vnode (vnode node part)]
       (do (vnode/enqueue vnode task)
           {:task-id (:id task)})
       {:error (str "I don't have partition" part "for task" (:id task))})))
 
 (defn get-task
   "Gets the current state of a task."
-  [net router num-partitions n vnodes msg]
+  [node msg]
   (let [id (:id msg)
-        preflist (preflist router num-partitions id)
         r (get msg :r 1)
-        responses (net/sync-req! net preflist {:r r}
+        responses (net/sync-req! (:net node)
+                                 (preflist node id)
+                                 {:r r}
                                  {:type :get-task-local
                                   :id   id})
         acks (remove :error responses)
@@ -113,23 +138,23 @@
 
 (defn get-task-local
   "Gets the current state of a task from a local vnode"
-  [num-partitions vnodes msg]
+  [node msg]
   (let [id (:id msg)
-        part (partition-name num-partitions id)]
-    (if-let [vnode (get @vnodes part)]
+        part (partition-name node id)]
+    (if-let [vnode (vnode node part)]
       {:task (vnode/get-task vnode id)}
       {:error (str "I don't have partition" part "for task" id)})))
 
 (defn count-tasks
   "Estimates the total number of tasks in the system."
-  [net router num-partitions n vnodes msg]
-  (let [parts  (set (all-partitions num-partitions))
+  [node msg]
+  (let [parts  (set (all-partitions node))
         counts (atom {})
         done   (promise)]
 
     ; Issue requests to all nodes for their local couns
-    (doseq [peer (route/instances router :skuld :peer)]
-      (net/req! net [peer] {:r 1} {:type :count-tasks-local}
+    (doseq [peer (route/instances (:router node) :skuld :peer)]
+      (net/req! (:net node) [peer] {:r 1} {:type :count-tasks-local}
                 [[response]]
                 (let [remote-counts (:partitions response)
                       counts (swap! counts
@@ -144,27 +169,26 @@
 
 (defn count-tasks-local
   "Estimates the total number of tasks on the local node."
-  [vnodes msg]
+  [node msg]
   {:partitions
    (reduce (fn [counts [k vnode]]
              (assoc counts k (vnode/count-tasks vnode)))
            {}
-           @vnodes)})
+           (vnodes node))})
   
 (defn handler
   "Returns a fn which handles messages for a node."
-  [participant net router vnodes]
-  (let [num-partitions (num-partitions participant)
-        n              (num-replicas participant)]
-    (fn handler [msg]
-      (case (:type msg)
-        :enqueue        (enqueue net router num-partitions n vnodes msg)
-        :enqueue-local  (enqueue-local num-partitions vnodes msg)
-        :get-task       (get-task net router num-partitions n vnodes msg)
-        :get-task-local (get-task-local num-partitions vnodes msg)
-        :count-tasks    (count-tasks net router num-partitions n vnodes msg)
-        :count-tasks-local (count-tasks-local vnodes msg)
-        {:error (str "unknown message type" (:type msg))}))))
+  [node]
+  (fn handler [msg]
+    ((case (:type msg)
+       :enqueue            enqueue
+       :enqueue-local      enqueue-local
+       :get-task           get-task
+       :get-task-local     get-task-local
+       :count-tasks        count-tasks
+       :count-tasks-local  count-tasks-local
+       (constantly {:error (str "unknown message type" (:type msg))}))
+     node msg)))
 
 (def fsm-def (clj-helix.fsm/fsm-definition
                {:name   :skuld
@@ -205,13 +229,7 @@
         vnodes  (atom {})
         fsm     (fsm vnodes)
 
-;        _ (future
-;            (loop []
-;              (Thread/sleep 10000)
-;              (prn :vnodes (keys @vnodes))
-;              (prn (count (tasks vnodes)) "total tasks")
-;              (recur)))
-
+        ; Initialize services
         controller  (helix/controller {:zookeeper zk
                                        :cluster cluster
                                        :instance {:host host :port port}})
@@ -223,22 +241,25 @@
         net (net/node {:host host
                        :port port})
         clock-sync (clock-sync/service net router vnodes)
-        aae        (aae/service net router vnodes)]
+        aae        (aae/service net router vnodes)
 
-    (net/add-handler! net (handler participant net router vnodes))
+        ; Construct node
+        node {:host host
+              :port port
+              :net net
+              :router router
+              :clock-sync clock-sync
+              :aae aae
+              :participant participant
+              :controller controller
+              :vnodes vnodes}]
+
+    (net/add-handler! net (handler node))
 
     ; Start network node
     (net/start! net)
 
-    {:host host
-     :port port
-     :net net
-     :router router
-     :clock-sync clock-sync
-     :aae aae
-     :participant participant
-     :controller controller
-     :vnodes vnodes}))
+    node))
 
 (defn controller
   "Creates a new controller, with the given options.
