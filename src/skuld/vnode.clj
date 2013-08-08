@@ -11,7 +11,8 @@
   [opts]
   {:partition (get opts :partition)
    :state (get opts :state :peer)
-   :tasks (atom (sorted-map))})
+   :tasks (atom (sorted-map))
+   :claims (atom (sorted-map))})
 
 (defn enqueue
   "Enqueues a new task into this vnode."
@@ -22,7 +23,7 @@
 (defn merge-task!
   "Takes a task and merges it into this vnode."
   [vnode task]
-  (swap! (:tasks vnode) update-in [(:id task)] task/merge-task task))
+  (swap! (:tasks vnode) update-in [(:id task)] task/merge task))
 
 (defn get-task
   "Returns a specific task by ID."
@@ -38,18 +39,3 @@
   "All tasks in this vnode."
   [vnode]
   (vals @(:tasks vnode)))
-
-(defn completed
-  "All completed tasks in this vnode."
-  [vnode]
-  (vals @(:tasks vnode)))
-
-(defn claimed
-  "All claimed tasks in this vnode."
-  [vnode]
-  (->> vnode tasks (filter task/claimed?)))
-
-(defn unclaimed
-  "All unclaimed tasks in this vnode."
-  [vnode]
-  (->> vnode tasks (remove task/claimed?)))

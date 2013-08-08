@@ -1,5 +1,6 @@
 (ns skuld.task
   "Operations on individual tasks."
+  (:refer-clojure :exclude [merge])
   (:require [skuld.flake :as flake]
             [taoensso.nippy :as nippy])
   (:import com.aphyr.skuld.Bytes
@@ -16,22 +17,23 @@
                      (.read in bytes)
                      (Bytes. bytes))) ; nom nom nom
 
-(def clock-skew-limit
-  "The number of milliseconds we allow clocks, nodes, messages, and networks to
-  drift."
-  60000)
+(defn map*
+  "Like map, but runs as long as any seq has elements, padding with nil."
+  [f & seqs]
+  (lazy-seq
+    (if (some seq seqs)
+      (cons (apply f (map #(when (seq %) (first %)) seqs))
+            (apply map* f (map rest seqs)))
+      ())))
 
-(defn claimed?
-  "Is a task currently claimed?"
-  [task]
-  (let [claims (:claims task)]
-    (and (not (empty? claims))
-         (->> claims
-              last
-              :end
-              (+ clock-skew-limit)
-              (< (flake/linear-time))))))
+(defn merge-logs
+  "Merges two sets of logs together."
+  [logs1 logs2]
+  (map* (partial map* #(or %1 %2)) logs1 logs2))
 
-(defn merge-task
+(defn merge
+  "Merges two tasks together. Associative, commutative, idempotent."
   [t1 t2]
-  (merge t1 t2))
+  (-> t1
+      (clojure.core/merge t2)
+      (assoc :logs (merge-logs (:logs t1) (:logs t2)))))

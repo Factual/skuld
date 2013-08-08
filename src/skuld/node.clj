@@ -98,7 +98,7 @@
                                  {:type :get-task-local
                                   :id   id})
         acks (remove :error responses)
-        task (->> responses (map :task) (reduce task/merge-task))]
+        task (->> responses (map :task) (reduce task/merge))]
     (if (<= r (count acks))
       {:n    (count acks)
        :task task}
@@ -115,6 +115,10 @@
     (if-let [vnode (get @vnodes part)]
       {:task (vnode/get-task vnode id)}
       {:error (str "I don't have partition" part "for task" id)})))
+
+(defn claim
+  "Claims a task."
+  [net router num-partitions n vnodes msg]) 
 
 (defn handler
   "Returns a fn which handles messages for a node."
