@@ -13,10 +13,9 @@
                         (assoc seqs idx (next s))
                         heads))))))
 
-(defn sorted-interleave
-  "Given n sorted sequences, yields a lazy sequence which yields all elements
-  in all n collections, in order."
-  [& seqs]
+(defn sorted-interleave-by
+  "Like sorted-interleave, but takes a specific keyfn, like sort-by."
+  [keyfn & seqs]
   ; We keep a sorted map of the heads of each seq. Given seqs a, b, and c, with
   ; elements a0, a1, ...:
   ;
@@ -29,7 +28,7 @@
   ; stable comparator, so we use the sequence position.
   (let [heads (ConcurrentSkipListSet.
                 (fn [a b]
-                  (let [x (compare (first a) (first b))]
+                  (let [x (compare (keyfn (first a)) (keyfn (first b)))]
                     (if-not (zero? x)
                       x
                       (compare (nth a 1) (nth b 1))))))]
@@ -41,3 +40,9 @@
           (.add heads [(first s) i]))))
 
     (sorted-interleave-helper (mapv next seqs) heads)))
+
+(defn sorted-interleave
+  "Given n sorted sequences, yields a lazy sequence which yields all elements
+  in all n collections, in order."
+  [& seqs]
+  (apply sorted-interleave-by identity seqs))

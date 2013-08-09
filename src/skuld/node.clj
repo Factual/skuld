@@ -1,5 +1,6 @@
 (ns skuld.node
   "A single node in the Skuld cluster. Manages any number of vnodes."
+  (:use skuld.util)
   (:require [skuld.vnode :as vnode]
             [skuld.net :as net]
             [skuld.flake :as flake]
@@ -73,14 +74,18 @@
        range
        (map (partial str "skuld_"))))
 
+(defn peers
+  "All peers which own a partition, or all peers in the cluster."
+  ([node]
+   (route/instances (:router node) :skuld :peer))
+  ([node part]
+   (route/instances (:router node) :skuld part :peer)))
+
 (defn preflist
   "Returns a set of nodes responsible for a given ID."
   [node ^bytes id]
   (assert (not (nil? id)))
-  (route/instances (:router node)
-                   :skuld
-                   (partition-name node id)
-                   :peer))
+  (peers node (partition-name node id)))
 
 (defn majority
   "For N replicas, what would consititute a majority?"
@@ -175,7 +180,58 @@
              (assoc counts k (vnode/count-tasks vnode)))
            {}
            (vnodes node))})
-  
+
+(defn cover
+  "Returns a map of nodes to lists of partitions on that node, such that each
+  partition appears exactly once. Useful when you want to know something about
+  every partition."
+  [node]
+  (->> node
+       all-partitions
+       (reduce (fn [m part]
+                 (let [peer (first (peers node part))]
+                   (update-in m [peer] conj part)))
+               {})))
+
+(defn coverage
+  "Issues a query to a cover of nodes. The message sent to each peer will
+  include a new key :partitions with a value like [\"skuld_0\" \"skuld_13\"
+  ...].  The responses for this message should look like:
+
+  {:partitions {\"skuld_0\" some-value \"skuld_13\" something-else ...}
+
+  Coverage will return a map of partition names to one value for each
+  partition."
+  [node msg]
+  (let [responses (atom {})
+        done      (promise)
+        cover     (cover node)
+        all-parts (set (all-partitions node))]
+    (doseq [[peer parts] cover]
+      (net/req! (:net node) [peer] {} (assoc msg :partitions parts)
+                [[response]]
+                (let [responses (swap! responses merge (:partitions response))]
+                  (when (= all-parts (set (keys responses)))
+                    (deliver done responses)))))
+    (deref done 5000
+           {:error "did not receive a complete set of responses for coverage query"
+            :partitions @responses})))
+
+(defn list-tasks
+  "Lists all tasks in the system."
+  [node msg]
+  {:tasks (->> {:type :list-tasks-local}
+               (coverage node)
+               vals
+               (apply sorted-interleave-by :id))})
+
+(defn list-tasks-local
+  [node msg]
+  {:partitions (reduce (fn [m part]
+                         (assoc m part (vnode/tasks (vnode node part))))
+                       {}
+                       (:partitions msg))})
+
 (defn handler
   "Returns a fn which handles messages for a node."
   [node]
@@ -187,6 +243,8 @@
        :get-task-local     get-task-local
        :count-tasks        count-tasks
        :count-tasks-local  count-tasks-local
+       :list-tasks         list-tasks
+       :list-tasks-local   list-tasks-local
        (constantly {:error (str "unknown message type" (:type msg))}))
      node msg)))
 

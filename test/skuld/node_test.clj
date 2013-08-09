@@ -100,4 +100,15 @@
                                  {}
                                  {:type :count-tasks})
                   first)]
-      (is (< n (:count res))))))
+      (is (<= n (:count res))))))
+
+(deftest list-tasks-test
+  (let [tasks (-> *net*
+                  (net/sync-req! [{:host "127.0.0.1" :port 13000}]
+                                 {}
+                                 {:type :list-tasks})
+                  first
+                  :tasks)]
+    (is (< 0 (count tasks)))
+    (is (= (sort (map :id tasks)) (map :id tasks)))
+    (is (some :payload tasks))))
