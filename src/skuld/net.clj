@@ -252,6 +252,7 @@
 (defn send!
   "Sends a message to a peer."
   [node peer msg]
+  (assert (started? node))
   (let [c (conn node peer)]
     (.write c msg))
   node)
@@ -325,6 +326,7 @@
   :r
   :f"
   [node peers opts msg]
+  (assert (started? node))
   (let [req (new-request opts)
         id  (.id req)
         msg (assoc msg :request-id id)]
@@ -434,7 +436,8 @@
 (defn started?
   "Is node started?"
   [node]
-  (not (nil? @(:handler node))))
+  (when-let [h (:handler node)]
+    (not (nil? @h))))
 
 (defn start!
   "Starts the node, when all handlers have been registered."

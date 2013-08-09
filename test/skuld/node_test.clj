@@ -2,7 +2,8 @@
   (:use [clj-helix.logging :only [mute]]
         clojure.tools.logging
         clojure.test)
-  (:require [skuld.admin :as admin]
+  (:require [skuld.client :as client]
+            [skuld.admin :as admin]
             [skuld.node :as node]
             [skuld.flake :as flake]
             [skuld.net :as net]
@@ -38,6 +39,14 @@
   [nodes]
   (->> nodes (pmap node/shutdown!) doall))
 
+(defn wipe-cluster!
+  "Wipe clean all data on the cluster."
+  [nodes]
+  (when (net/started? *net*)
+    (when-let [n (first nodes)]
+      (-> *net*
+           (net/sync-req! [n] {} {:type :wipe})))))
+
 (use-fixtures :once
               ; Start cluster
               (fn [f] (mute (ensure-cluster!) (f)))
@@ -59,6 +68,12 @@
                       (f)
                       (finally
                         (shutdown-nodes! *nodes*)))))))
+
+(use-fixtures :each
+              ; Wipe cluster
+              (fn [f]
+                (wipe-cluster! *nodes*)
+                (f)))
 
 (def byte-array-class ^:const (type (byte-array 0)))
 
@@ -100,15 +115,24 @@
                                  {}
                                  {:type :count-tasks})
                   first)]
-      (is (<= n (:count res))))))
+      (is (= n (:count res))))))
 
 (deftest list-tasks-test
-  (let [tasks (-> *net*
-                  (net/sync-req! [{:host "127.0.0.1" :port 13000}]
-                                 {}
-                                 {:type :list-tasks})
-                  first
-                  :tasks)]
-    (is (< 0 (count tasks)))
-    (is (= (sort (map :id tasks)) (map :id tasks)))
-    (is (some :payload tasks))))
+  ; Enqueue
+  (let [n 10]
+    (dotimes [i n]
+      (-> *net*
+          (net/sync-req! [{:host "127.0.0.1" :port 13000}]
+                         {}
+                         {:type :enqueue
+                          :task {:payload "sup"}})))
+    ; List
+    (let [tasks (-> *net*
+                    (net/sync-req! [{:host "127.0.0.1" :port 13000}]
+                                   {}
+                                   {:type :list-tasks})
+                    first
+                    :tasks)]
+      (is (= n (count tasks)))
+      (is (= (sort (map :id tasks)) (map :id tasks)))
+      (is (some :payload tasks)))))

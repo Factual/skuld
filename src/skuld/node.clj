@@ -92,7 +92,7 @@
   [n]
   (int (Math/floor (inc (/ n 2)))))
 
-(defn enqueue
+(defn enqueue!
   "Proxies to enqueue-local on all nodes in the preflist for this task."
   [node msg]
   (let [id (flake/id)
@@ -111,13 +111,13 @@
          :error     (str "not enough acks")
          :responses responses}))))
 
-(defn enqueue-local
+(defn enqueue-local!
   "Enqueues a message on the local vnode for this task."
   [node msg]
   (let [task (:task msg)
         part (partition-name node (:id task))]
     (if-let [vnode (vnode node part)]
-      (do (vnode/enqueue vnode task)
+      (do (vnode/enqueue! vnode task)
           {:task-id (:id task)})
       {:error (str "I don't have partition" part "for task" (:id task))})))
 
@@ -232,19 +232,32 @@
                        {}
                        (:partitions msg))})
 
+(defn wipe!
+  "Wipes all data clean."
+  [node msg]
+  (net/sync-req! (:net node) (peers node) {} {:type :wipe-local}))
+
+(defn wipe-local!
+  "Wipe all data on the local node."
+  [node msg]
+  (->> node vnodes vals (pmap vnode/wipe!) dorun)
+  {})
+
 (defn handler
   "Returns a fn which handles messages for a node."
   [node]
   (fn handler [msg]
     ((case (:type msg)
-       :enqueue            enqueue
-       :enqueue-local      enqueue-local
+       :enqueue            enqueue!
+       :enqueue-local      enqueue-local!
        :get-task           get-task
        :get-task-local     get-task-local
        :count-tasks        count-tasks
        :count-tasks-local  count-tasks-local
        :list-tasks         list-tasks
        :list-tasks-local   list-tasks-local
+       :wipe               wipe!
+       :wipe-local         wipe-local!
        (constantly {:error (str "unknown message type" (:type msg))}))
      node msg)))
 

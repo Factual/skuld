@@ -14,7 +14,7 @@
    :tasks (atom (sorted-map))
    :claims (atom (sorted-map))})
 
-(defn enqueue
+(defn enqueue!
   "Enqueues a new task into this vnode."
   [vnode task]
   (let [id (Bytes. (:id task))]
@@ -44,3 +44,10 @@
   "All tasks in this vnode."
   [vnode]
   (vals @(:tasks vnode)))
+
+(defn wipe!
+  "Wipe a vnode's data clean."
+  [vnode]
+  (reset! (:tasks vnode) (sorted-map))
+  (reset! (:claims vnode) (sorted-map))
+  vnode)
