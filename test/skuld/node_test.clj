@@ -15,7 +15,7 @@
 (def admin
   (admin/admin {:partitions 2 :replicas 3}))
 
-(def ^:dynamic *net* nil)
+(def ^:dynamic *client* nil)
 (def ^:dynamic *nodes* nil)
 
 (defn ensure-cluster!
@@ -39,25 +39,9 @@
   [nodes]
   (->> nodes (pmap node/shutdown!) doall))
 
-(defn wipe-cluster!
-  "Wipe clean all data on the cluster."
-  [nodes]
-  (when (net/started? *net*)
-    (when-let [n (first nodes)]
-      (client/wipe! *net* n))))
-
 (use-fixtures :once
               ; Start cluster
               (fn [f] (mute (ensure-cluster!) (f)))
-
-              ; Start net
-              (fn [f]
-                (binding [*net* (doto (net/node {:port 13100})
-                                  (net/start!))]
-                  (try
-                    (f)
-                    (finally
-                      (net/shutdown! *net*)))))
 
               ; Start nodes
               (fn [f]
@@ -66,69 +50,52 @@
                     (try
                       (f)
                       (finally
-                        (shutdown-nodes! *nodes*)))))))
+                        (shutdown-nodes! *nodes*))))))
+
+              ; Start client
+              (fn [f]
+                (binding [*client* (client/client *nodes*)]
+                  (try
+                    (f)
+                    (finally
+                      (client/shutdown! *client*))))))
 
 (use-fixtures :each
               ; Wipe cluster
               (fn [f]
-                (wipe-cluster! *nodes*)
+                (client/wipe! *client*)
                 (f)))
 
-(def byte-array-class ^:const (type (byte-array 0)))
+; (def byte-array-class ^:const (type (byte-array 0)))
 
 (deftest enqueue-test
   ; Enqueue a task
-  (let [id (-> (client/enqueue! *net*
-                                (first *nodes*)
-                                {:payload "hi there"})
-               :task
-               :id)]
-    (is (instance? byte-array-class id))
+  (let [id (client/enqueue! *client* {:payload "hi there"})]
+    (is id)
+    (is (instance? Bytes id))
 
     ; Read it back
-    (let [task (-> *net*
-                   (net/sync-req! [(first *nodes*)]
-                         {:r 3}
-                         {:type :get-task
-                          :id id})
-                   first
-                   :task)]
-      (is (= task
-             {:id (Bytes. id)
-              :payload "hi there"})))))
+    (is (= (client/get-task *client* id)
+           {:id id
+            :logs nil
+            :payload "hi there"}))))
 
 (deftest count-test
   ; Enqueue a few tasks
   (let [n 10]
     (dotimes [i n]
-      (-> *net*
-          (net/sync-req! [{:host "127.0.0.1" :port 13000}]
-                         {}
-                         {:type :enqueue
-                          :task {:payload "sup"}})))
-    (let [res (-> *net*
-                  (net/sync-req! [{:host "127.0.0.1" :port 13000}]
-                                 {}
-                                 {:type :count-tasks})
-                  first)]
-      (is (= n (:count res))))))
+      (client/enqueue! *client* {:payload "sup"}))
+
+    (is (= n (client/count-tasks *client*)))))
 
 (deftest list-tasks-test
   ; Enqueue
   (let [n 10]
     (dotimes [i n]
-      (-> *net*
-          (net/sync-req! [{:host "127.0.0.1" :port 13000}]
-                         {}
-                         {:type :enqueue
-                          :task {:payload "sup"}})))
+      (client/enqueue! *client* {:payload "sup"}))
+    
     ; List
-    (let [tasks (-> *net*
-                    (net/sync-req! [{:host "127.0.0.1" :port 13000}]
-                                   {}
-                                   {:type :list-tasks})
-                    first
-                    :tasks)]
+    (let [tasks (client/list-tasks *client*)]
       (is (= n (count tasks)))
       (is (= (sort (map :id tasks)) (map :id tasks)))
       (is (some :payload tasks)))))

@@ -415,7 +415,7 @@
   
   :host
   :port
-  :handler   A function which accepts messages from other nodes.
+  :server? Should we be a server as well? (default true)
 
   Handlers are invoked with each message, and may return an response to be sent
   back to the client."
@@ -426,6 +426,7 @@
      :port port
      :handlers (atom [])
      :handler  (atom nil)
+     :server?  (get opts :server? true)
      :server   (atom nil)
      :client   (atom nil)
      :conns    (atom {})
@@ -445,8 +446,9 @@
   (locking (:handler node)
     (when-not (started? node)
       (let [handler (compile-handler (deref (:handlers node)))]
-        (reset! (:handler node) handler) 
-        (reset! (:server node) (server node))
+        (reset! (:handler node) handler)
+        (when (:server? node) 
+          (reset! (:server node) (server node)))
         (reset! (:client node) (client node))
         (reset! (:gc     node) (periodically-gc-requests! (:requests node)))
         node))))

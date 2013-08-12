@@ -11,7 +11,8 @@
             clj-helix.admin
             clj-helix.fsm
             [clj-helix.route :as route])
-  (:import (java.util Arrays)))
+  (:import (java.util Arrays)
+           com.aphyr.skuld.Bytes))
 
 (defn vnodes
   "Returns a map of partitions to vnodes for a node."
@@ -61,8 +62,9 @@
 
 (defn partition-name
   "Calculates which partition is responsible for a given ID."
-  [node ^bytes id]
+  [node ^Bytes id]
   (str "skuld_" (-> id
+      .bytes
       Arrays/hashCode
       (mod (num-partitions node)))))
 
@@ -82,8 +84,8 @@
    (route/instances (:router node) :skuld part :peer)))
 
 (defn preflist
-  "Returns a set of nodes responsible for a given ID."
-  [node ^bytes id]
+  "Returns a set of nodes responsible for a Bytes id."
+  [node ^Bytes id]
   (assert (not (nil? id)))
   (peers node (partition-name node id)))
 
@@ -95,7 +97,7 @@
 (defn enqueue!
   "Proxies to enqueue-local on all nodes in the preflist for this task."
   [node msg]
-  (let [id (flake/id)
+  (let [id (Bytes. (flake/id))
         task (assoc (:task msg) :id id)]
     (let [r (get msg :r 1)
           responses (net/sync-req! (:net node)
@@ -106,8 +108,9 @@
           acks (remove :error responses)]
       (if (<= r (count acks))
         {:n         (count acks)
-         :task      task}
+         :id        id}
         {:n         (count acks)
+         :id        id
          :error     (str "not enough acks")
          :responses responses}))))
 
@@ -235,7 +238,8 @@
 (defn wipe!
   "Wipes all data clean."
   [node msg]
-  (net/sync-req! (:net node) (peers node) {} {:type :wipe-local}))
+  (net/sync-req! (:net node) (peers node) {} {:type :wipe-local})
+  {})
 
 (defn wipe-local!
   "Wipe all data on the local node."

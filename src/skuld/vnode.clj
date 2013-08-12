@@ -17,7 +17,7 @@
 (defn enqueue!
   "Enqueues a new task into this vnode."
   [vnode task]
-  (let [id (Bytes. (:id task))]
+  (let [id (:id task)]
     (swap! (:tasks vnode) assoc id (assoc task :id id))))
 
 (defn merge-task!
@@ -28,7 +28,7 @@
 (defn get-task
   "Returns a specific task by ID."
   [vnode id]
-  (-> vnode :tasks deref (get (Bytes. id))))
+  (-> vnode :tasks deref (get id)))
 
 (defn ids
   "All task IDs in this vnode."
