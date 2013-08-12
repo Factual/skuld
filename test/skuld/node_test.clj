@@ -44,8 +44,7 @@
   [nodes]
   (when (net/started? *net*)
     (when-let [n (first nodes)]
-      (-> *net*
-           (net/sync-req! [n] {} {:type :wipe})))))
+      (client/wipe! *net* n))))
 
 (use-fixtures :once
               ; Start cluster
@@ -79,12 +78,9 @@
 
 (deftest enqueue-test
   ; Enqueue a task
-  (let [id (-> *net*
-               (net/sync-req! [{:host "127.0.0.1" :port 13000}]
-                              {}
-                              {:type :enqueue
-                               :task {:payload "hi there"}})
-               first
+  (let [id (-> (client/enqueue! *net*
+                                (first *nodes*)
+                                {:payload "hi there"})
                :task
                :id)]
     (is (instance? byte-array-class id))
