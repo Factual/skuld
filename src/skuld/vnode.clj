@@ -29,10 +29,54 @@
     (route/instances (:router vnode) :skuld (:partition vnode) :peer)))
 
 (defn elect!
-  "Attempt to become a primary. We do this by incrementing our local epoch,
-  broadcasting a request for votes to all peers, and waiting for a majority of
-  responses. If we establish a majority, then we're guaranteed that this node
-  is the leader for a particular epoch and set of nodes."
+  "Attempt to become a primary. We need to ensure that:
+
+  1. Leaders are logically sequential
+  2. Each leader's claim set is a superset of the previous leader
+  
+  We have: a target cohort of nodes for the new epoch, provided by helix.
+  Some previous cohort of nodes belonging to the old epoch, tracked by ZK.
+
+  To become a leader, one must successfully:
+
+  1. Read the previous epoch+cohort from ZK
+  
+  2. (optimization) Ensure that the previous epoch is strictly less than the
+  epoch this node is going to be the leader for.
+  
+  3. Broadcast a claim message to the new cohort, union the old cohort
+
+  4. Receive votes from a majority of the nodes in the old cohort
+
+  5. Receive votes from a majority of the nodes in the new cohort
+
+    - At this juncture, neither the new nor the old cohort can commit claims
+  for our target epoch or lower, making the set of claims made in older epochs
+  immutable. If we are beat by another node using a newer epoch, it will have
+  recovered a superset of those claims; we'll fail to CAS in step 8, and no
+  claims will be lost.
+
+  6. Obtain all claims from a majority of the old cohort, and union them in to
+  our local claim set.
+
+    - This ensures that we are aware of all claims made prior to our epoch.
+
+  7. Broadcast our local claim set to a majority of the new cohort.
+
+    - This ensures that any *future* epoch will correctly recover our claim
+      set. 6 + 7 provide a continuous history of claims, by induction.
+
+  8. CAS our new epoch and cohort into zookeeper, ensuring that nobody else
+     beat us to it.
+
+  If any stage fails, delay randomly and retry.
+
+  A note on zombies:
+
+  Zombies are nodes which are ready to give up ownership of a vnode but cannot,
+  because they may still be required to hand off their claim set. After step 8,
+  we inform all zombies which are not a part of our new cohort that it is safe
+  to drop their claim set."
   [vnode]
   ; First, compute the set of peers that will comprise the next epoch.
   (let [nodes (peers vnode)
