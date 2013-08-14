@@ -51,3 +51,18 @@
   in all n collections, in order."
   [& seqs]
   (apply sorted-interleave-by identity seqs))
+
+(defn majority
+  "For N replicas, what would consititute a majority?"
+  [n]
+  (int (Math/floor (inc (/ n 2)))))
+
+(defn majority-value
+  "What element of a collection appears greater than 50% of the time?"
+  [coll]
+  (let [m (majority (count coll))]
+    (when-let [pair (->> coll
+                         (group-by identity)
+                         (filter (comp (partial <= m) count val))
+                         first)]
+      (key pair))))

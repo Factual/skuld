@@ -200,10 +200,16 @@
         (.awaitTermination group- 30 TimeUnit/SECONDS)
         (throw t)))))
 
-(defn node-id
-  "A short identifier for a node."
+(defn string-id
+  "A string identifier for a node."
   [node]
   (str (:host node) ":" (:port node)))
+
+(defn id
+  "A map identifier for a node."
+  [node]
+  {:host (:host node)
+   :port (:port node)})
 
 (defn connect
   "Opens a new client connection to the given peer, identified by host and
@@ -225,13 +231,13 @@
         ; Store the peer ID in the channel's attributes for later.
         (.. ch
             (attr peer-attr)
-            (set (node-id peer)))
+            (set (string-id peer)))
         ch))))
 
 (defn ^Channel conn
   "Find or create a client to the given peer."
   [node peer]
-  (let [id    (node-id peer)
+  (let [id    (string-id peer)
         conns (:conns node)]
     ; Standard double-locking strategy
     (or (get @conns id)

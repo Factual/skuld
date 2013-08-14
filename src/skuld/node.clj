@@ -89,11 +89,6 @@
   (assert (not (nil? id)))
   (peers node (partition-name node id)))
 
-(defn majority
-  "For N replicas, what would consititute a majority?"
-  [n]
-  (int (Math/floor (inc (/ n 2)))))
-
 (defn enqueue!
   "Proxies to enqueue-local on all nodes in the preflist for this task."
   [node msg]
@@ -247,6 +242,13 @@
   (->> node vnodes vals (pmap vnode/wipe!) dorun)
   {})
 
+(defn request-vote!
+  "Handles a request for a vote from another node."
+  [node msg]
+  (if-let [vnode (vnode node (:partition msg))]
+    (vnode/request-vote! vnode msg)
+    {:error (str "no such vnode" (:partition msg) "here")}))
+
 (defn handler
   "Returns a fn which handles messages for a node."
   [node]
@@ -262,6 +264,7 @@
        :list-tasks-local   list-tasks-local
        :wipe               wipe!
        :wipe-local         wipe-local!
+       :request-vote       request-vote!
        (constantly {:error (str "unknown message type" (:type msg))}))
      node msg)))
 
@@ -275,13 +278,16 @@
                                 :transitions :offline}}}))
 
 (defn fsm
-  "Compiles a new FSM to manage a vnodes map."
-  [vnodes]
+  "Compiles a new FSM to manage a vnodes map. Takes an atom of partitions to
+  vnodes, a net node, and a promise of a router."
+  [vnodes net routerp]
   (clj-helix.fsm/fsm
     fsm-def
     (:offline :peer [part m c]
               (swap! vnodes assoc part
-                     (vnode/vnode {:partition part})))
+                     (vnode/vnode {:partition part
+                                   :router @routerp
+                                   :net net})))
 
     (:offline :DROPPED [part m c])
 
@@ -302,7 +308,10 @@
         port    (get opts :port 13000)
         cluster (get opts :cluster :skuld)
         vnodes  (atom {})
-        fsm     (fsm vnodes)
+        net         (net/node {:host host
+                               :port port})
+        routerp  (promise)
+        fsm         (fsm vnodes net routerp)
 
         ; Initialize services
         controller  (helix/controller {:zookeeper zk
@@ -312,11 +321,10 @@
                                         :cluster cluster
                                         :instance {:host host :port port}
                                         :fsm fsm})
-        router (clj-helix.route/router! participant)
-        net (net/node {:host host
-                       :port port})
-        clock-sync (clock-sync/service net router vnodes)
-        aae        (aae/service net router vnodes)
+        router      (clj-helix.route/router! participant)
+        _           (deliver routerp router)
+        clock-sync  (clock-sync/service net router vnodes)
+        aae         (aae/service net router vnodes)
 
         ; Construct node
         node {:host host

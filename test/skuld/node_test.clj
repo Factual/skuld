@@ -1,12 +1,15 @@
 (ns skuld.node-test
   (:use [clj-helix.logging :only [mute]]
         clojure.tools.logging
-        clojure.test)
+        clojure.test
+        skuld.util
+        skuld.node)
   (:require [skuld.client :as client]
-            [skuld.admin :as admin]
-            [skuld.node :as node]
-            [skuld.flake :as flake]
-            [skuld.net :as net]
+            [skuld.admin  :as admin]
+            [skuld.vnode  :as vnode]
+            [skuld.flake  :as flake]
+            [skuld.net    :as net]
+            [clojure.set  :as set]
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
 
@@ -31,13 +34,13 @@
   "Returns a vector of a bunch of started nodes."
   []
   (->> (range 5)
-       (pmap #(node/node {:port (+ 13000 %)}))
+       (pmap #(node {:port (+ 13000 %)}))
        doall))
 
 (defn shutdown-nodes!
   "Shutdown a seq of nodes."
   [nodes]
-  (->> nodes (pmap node/shutdown!) doall))
+  (->> nodes (pmap shutdown!) doall))
 
 (use-fixtures :once
               ; Start cluster
@@ -99,3 +102,78 @@
       (is (= n (count tasks)))
       (is (= (sort (map :id tasks)) (map :id tasks)))
       (is (some :payload tasks)))))
+
+(defn test-election-consistent
+  "Asserts that the current state of the given vnodes is consistent, from a
+  leader-election perspective."
+  [vnodes]
+  ; Take a snapshot of the states (so we're operating on locally consistent
+  ; information
+  (let [states (->> vnodes
+                    (map vnode/state)
+                    (map (fn [vnode state]
+                           (assoc state :id (net/id (:net vnode))))
+                         vnodes)
+                    doall)
+        leaders (filter #(= :leader (:type %)) states)
+        true-leader (promise)]
+
+    ; Exactly one leader for each epoch
+    (doseq [[epoch leaders] (group-by :epoch leaders)]
+      (is (= 1 (count leaders))))
+ 
+    ; For all leaders
+    (doseq [leader leaders]
+      ; Find all nodes which this leader could write to
+      (let [cohort (->> states
+                        (filter #(and (= (:epoch leader) (:epoch %))
+                                      (= (:nodes leader) (:nodes %)))))]
+        ; The cohort should be a subset of the leader's known nodes
+        (is (set/subset? (set (map :id cohort))
+                         (set (:nodes leader))))
+
+        ; And there should be exactly one leader which could satisfy a quorum
+        (when (<= (majority (count (:nodes leader)))
+                  (count cohort))
+          (deliver true-leader leader))))))
+
+(deftest election-test
+  (let [part "skuld_0"
+        nodes (filter #(vnode % part) *nodes*)
+        vnodes (map #(vnode % part) nodes)]
+    (is (= 3 (count nodes)))
+    (is (apply = 3 (map (comp count vnode/peers) vnodes)))
+    (is (apply = (map vnode/peers vnodes)))
+    (is (every? identity vnodes))
+
+    (testing "Initially"
+      (test-election-consistent vnodes))
+
+    (testing "A single candidate"
+      (vnode/elect! (first vnodes))
+      ; First node becomes leader
+      (is (vnode/leader? (first vnodes)))
+      ; Is consistent
+      (test-election-consistent vnodes)
+      ; Majority of nodes agree on the leader's epoch
+      (is (= (majority-value (map vnode/epoch vnodes))
+             (vnode/epoch (first vnodes)))))
+
+    (testing "Stress"
+      (let [running (promise)]
+        ; Measure consistency continuously
+        (future
+          (while (deref running 1 true)
+            (test-election-consistent vnodes)))
+
+        ; Initiate randomized elections
+        (->> vnodes
+             (map #(future
+                     (dotimes [i (rand-int 100)]
+                       (vnode/elect! %)
+                       (Thread/sleep (rand-int 10)))))
+             (map deref)
+             doall)
+
+        (deliver running false)
+        (test-election-consistent vnodes)))))
