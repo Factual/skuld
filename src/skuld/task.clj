@@ -1,5 +1,14 @@
 (ns skuld.task
-  "Operations on individual tasks."
+  "Operations on individual tasks. Tasks have this structure:
+
+  {:id     (Bytes) a 20-byte unique identifier for the task
+   :data   (bytes) an arbitrary payload
+   :claims [...]   a vector of claims}
+
+  A claim is a map of:
+
+  {:start  (long) milliseconds in linear time
+   :end    (long) milliseconds in linear time}"
   (:refer-clojure :exclude [merge])
   (:require [skuld.flake :as flake]
             [taoensso.nippy :as nippy])
@@ -17,23 +26,46 @@
                      (.read in bytes)
                      (Bytes. bytes))) ; nom nom nom
 
-(defn map*
-  "Like map, but runs as long as any seq has elements, padding with nil."
-  [f & seqs]
-  (lazy-seq
-    (if (some seq seqs)
-      (cons (apply f (map #(when (seq %) (first %)) seqs))
-            (apply map* f (map rest seqs)))
-      ())))
+(defn task
+  "Creates a new task around the given data payload."
+  [data]
+  {:id     (flake/id)
+   :data   data
+   :claims []})
 
-(defn merge-logs
-  "Merges two sets of logs together."
-  [logs1 logs2]
-  (map* (partial map* #(or %1 %2)) logs1 logs2))
+(defn new-claim
+  "Creates a new claim, valid for dt milliseconds."
+  [claim dt]
+  (let [now (flake/linear-time)]
+    {:start now
+     :end   (+ now dt)}))
+
+(defn merge-claims
+  "Merges a collection of vectors of claims together."
+  [claims]
+  (if (empty? claims)
+    claims
+    ; Determine how many claims there are
+    (->> claims
+         (map count)
+         (apply max)
+         range
+         ; Combine the ith claim from each vector
+         (mapv (fn [i]
+                 (reduce (fn combine [merged claims]
+                           (if-let [claim (nth claims i nil)]
+                             (if merged
+                               {:start (min (:start merged)
+                                            (:start claim))
+                                :end   (max (:end merged)
+                                            (:end claim))}
+                               claim)
+                             merged))
+                         nil
+                         claims))))))
 
 (defn merge
-  "Merges two tasks together. Associative, commutative, idempotent."
-  [t1 t2]
-  (-> t1
-      (clojure.core/merge t2)
-      (assoc :logs (merge-logs (:logs t1) (:logs t2)))))
+  "Merges n tasks together. Associative, commutative, idempotent."
+  [& tasks]
+  (-> (apply clojure.core/merge tasks)
+      (assoc :claims (merge-claims (map :claims tasks)))))
