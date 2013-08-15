@@ -40,3 +40,12 @@
              (assoc t :claims [{:start 0 :end 1}
                                 nil
                                 {:start 2 :end 4}]))))))
+
+(deftest claim-test
+  (let [t (claim (task :hi) 10)]
+    (is (claimed? t)))
+
+  (with-redefs [clock-skew-buffer 0]
+    (let [t (claim (task :hi) 0)]
+      (Thread/sleep 1)
+      (is (not (claimed? t))))))

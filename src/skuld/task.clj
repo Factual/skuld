@@ -26,6 +26,10 @@
                      (.read in bytes)
                      (Bytes. bytes))) ; nom nom nom
 
+(def clock-skew-buffer
+  "We allow nodes and clocks to drift by this much."
+  (* 1000 60 60))
+
 (defn task
   "Creates a new task around the given data payload."
   [data]
@@ -35,10 +39,31 @@
 
 (defn new-claim
   "Creates a new claim, valid for dt milliseconds."
-  [claim dt]
+  [dt]
   (let [now (flake/linear-time)]
     {:start now
      :end   (+ now dt)}))
+
+(defn valid-claim?
+  "Is a claim currently valid?"
+  [claim]
+  (< (flake/linear-time)
+     (+ (:end claim) clock-skew-buffer)))
+
+(defn claimed?
+  "Is this task currently claimed?"
+  [task]
+  (some valid-claim? (:claims task)))
+
+(defn claim
+  "Returns a copy of a task claimed for dt milliseconds. (last (:claims task))
+  will be the claim applied. Throws if the task is presently claimed."
+  [task dt]
+  (if (claimed? task)
+    (throw (IllegalStateException. "task already claimed"))
+    (assoc task :claims
+           (conj (:claims task)
+                 (new-claim dt)))))
 
 (defn merge-claims
   "Merges a collection of vectors of claims together."
