@@ -55,7 +55,9 @@
 (defn majority
   "For N replicas, what would consititute a majority?"
   [n]
-  (int (Math/floor (inc (/ n 2)))))
+  (if (zero? n)
+    0
+    (int (Math/floor (inc (/ n 2))))))
 
 (defn majority-value
   "What element of a collection appears greater than 50% of the time?"

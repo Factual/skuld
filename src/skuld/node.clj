@@ -7,6 +7,7 @@
             [skuld.clock-sync :as clock-sync]
             [skuld.aae :as aae]
             [skuld.task :as task]
+            [skuld.curator :as curator]
             [clj-helix.manager :as helix]
             clj-helix.admin
             clj-helix.fsm
@@ -280,12 +281,13 @@
 (defn fsm
   "Compiles a new FSM to manage a vnodes map. Takes an atom of partitions to
   vnodes, a net node, and a promise of a router."
-  [vnodes net routerp]
+  [vnodes curator net routerp]
   (clj-helix.fsm/fsm
     fsm-def
     (:offline :peer [part m c]
               (swap! vnodes assoc part
                      (vnode/vnode {:partition part
+                                   :curator curator
                                    :router @routerp
                                    :net net})))
 
@@ -304,6 +306,7 @@
   :port         13000"
   [opts]
   (let [zk      (get opts :zookeeper "localhost:2181")
+        curator (curator/framework zk "skuld")
         host    (get opts :host "127.0.0.1")
         port    (get opts :port 13000)
         cluster (get opts :cluster :skuld)
@@ -311,7 +314,7 @@
         net         (net/node {:host host
                                :port port})
         routerp  (promise)
-        fsm         (fsm vnodes net routerp)
+        fsm         (fsm vnodes curator net routerp)
 
         ; Initialize services
         controller  (helix/controller {:zookeeper zk
@@ -330,6 +333,7 @@
         node {:host host
               :port port
               :net net
+              :curator curator
               :router router
               :clock-sync clock-sync
               :aae aae

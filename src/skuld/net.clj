@@ -5,7 +5,8 @@
   (:require [clojure.edn :as edn]
             [taoensso.nippy :as nippy]
             [skuld.flake :as flake])
-  (:use clojure.tools.logging) 
+  (:use clojure.tools.logging
+        skuld.util) 
   (:import (com.aphyr.skuld Bytes)
            (java.io ByteArrayInputStream
                     DataInputStream
@@ -333,7 +334,8 @@
   :f"
   [node peers opts msg]
   (assert (started? node))
-  (let [req (new-request opts)
+  (let [r   (majority (count peers))
+        req (new-request (assoc opts :r (get opts :r (majority (count peers)))))
         id  (.id req)
         msg (assoc msg :request-id id)]
 

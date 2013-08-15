@@ -4,12 +4,13 @@
         clojure.test
         skuld.util
         skuld.node)
-  (:require [skuld.client :as client]
-            [skuld.admin  :as admin]
-            [skuld.vnode  :as vnode]
-            [skuld.flake  :as flake]
-            [skuld.net    :as net]
-            [clojure.set  :as set]
+  (:require [skuld.client  :as client]
+            [skuld.admin   :as admin]
+            [skuld.vnode   :as vnode]
+            [skuld.flake   :as flake]
+            [skuld.curator :as curator]
+            [skuld.net     :as net]
+            [clojure.set   :as set]
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
 
@@ -127,13 +128,13 @@
       ; Find all nodes which this leader could write to
       (let [cohort (->> states
                         (filter #(and (= (:epoch leader) (:epoch %))
-                                      (= (:nodes leader) (:nodes %)))))]
+                                      (= (:cohort leader) (:cohort %)))))]
         ; The cohort should be a subset of the leader's known nodes
         (is (set/subset? (set (map :id cohort))
-                         (set (:nodes leader))))
+                         (set (:cohort leader))))
 
         ; And there should be exactly one leader which could satisfy a quorum
-        (when (<= (majority (count (:nodes leader)))
+        (when (<= (majority (count (:cohort leader)))
                   (count cohort))
           (deliver true-leader leader))))))
 
@@ -150,6 +151,8 @@
       (test-election-consistent vnodes))
 
     (testing "A single candidate"
+      (curator/reset!! (vnode/zk-leader (first vnodes)) {:epoch 0
+                                                         :cohort #{}})
       (vnode/elect! (first vnodes))
       ; First node becomes leader
       (is (vnode/leader? (first vnodes)))
@@ -169,7 +172,7 @@
         ; Initiate randomized elections
         (->> vnodes
              (map #(future
-                     (dotimes [i (rand-int 100)]
+                     (dotimes [i (rand-int 10)]
                        (vnode/elect! %)
                        (Thread/sleep (rand-int 10)))))
              (map deref)

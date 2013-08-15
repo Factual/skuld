@@ -4,6 +4,7 @@
         clojure.tools.logging)
   (:require [skuld.task :as task]
             [skuld.net  :as net]
+            [skuld.curator :as curator]
             [clj-helix.route :as route])
   (:import com.aphyr.skuld.Bytes))
 
@@ -13,9 +14,15 @@
   :partition
   :state"
   [opts]
-  {:partition (get opts :partition)
+  {:partition (:partition opts)
    :net       (:net opts)
    :router    (:router opts)
+   :zk-leader (delay
+                (curator/distributed-atom (:curator opts)
+                                          (str "/" (:partition opts)
+                                               "/leader")
+                                          {:epoch 0
+                                           :cohort #{}}))
    :state     (atom {:type :follower
                      :leader nil
                      :epoch 0})
@@ -27,6 +34,12 @@
   [vnode]
   (map #(select-keys % [:host :port])
     (route/instances (:router vnode) :skuld (:partition vnode) :peer)))
+
+(defn zk-leader
+  "A curator distributed atom backed by Zookeeper, containing the current epoch
+  and cohort."
+  [vnode]
+  @(:zk-leader vnode))
 
 (defn elect!
   "Attempt to become a primary. We need to ensure that:
@@ -79,66 +92,111 @@
   to drop their claim set."
   [vnode]
   ; First, compute the set of peers that will comprise the next epoch.
-  (let [nodes (peers vnode)
-        self (net/id (:net vnode))
-        others (remove #{self} nodes)
-        
-        ; Increment the epoch and node set.
+  (let [self   (net/id (:net vnode))
+        cohort (set (peers vnode))
+        ; How many nodes do we need to hear from in the new cohort?
+        maj    (if (cohort self)
+                 (dec (majority (count cohort)))
+                 (majority (count cohort)))
+        others (remove #{self} cohort)
+
+        ; Increment the epoch and update the node set.
         epoch (-> vnode
                   :state
                   (swap! (fn [state]
                            (merge state {:epoch (inc (:epoch state))
                                          :leader self
                                          :type :candidate
-                                         :nodes nodes})))
+                                         :cohort cohort})))
                   :epoch)
-        
-        ; How many nodes do we need for a majority? (remember, we already voted
-        ; for ourself)
-        maj   (majority (count nodes))
 
-        ; Broadcast election message
-        responses (net/sync-req! (:net vnode)
-                                 others
-                                 {:r (dec maj)}
-                                 {:type :request-vote
-                                  :partition (:partition vnode)
-                                  :leader (net/id (:net vnode))
-                                  :nodes nodes
-                                  :epoch epoch})
-        
-        ; Count up positive responses
-        votes (inc (count (filter :vote responses)))]
+        ; Check ZK's last leader information
+        old (deref (zk-leader vnode))]
+    (if (<= epoch (:epoch old))
+      ; We're outdated; fast-forward to the new epoch.
+      (swap! (:state vnode) (fn [state]
+                              (merge state {:epoch (max (:epoch state)
+                                                        (:epoch old))
+                                            :leader nil
+                                            :type :follower
+                                            :cohort (:cohort old)})))
 
-    (if (< votes maj)
-      ; Did *not* receive sufficient votes.
-      (do)
-      (let [state (swap! (:state vnode)
-                         (fn [state]
-                           (if (= epoch (:epoch state))
-                             ; Still waiting for responses
-                             (assoc state :type :leader)
-                             ; We voted for someone else in the meantime
-                             state)))]))))
+      (let [old-cohort (set (:cohort old))
+
+            ; How many nodes do we need to hear from to constitute a majority?
+            old-maj (if (old-cohort self)
+                      (dec (majority (count old-cohort)))
+                      (majority (count old-cohort)))
+
+            ; Our vote request
+            req {:type :request-vote
+                 :partition (:partition vnode)
+                 :leader (net/id (:net vnode))
+                 :cohort cohort
+                 :epoch epoch}
+
+            ; Issue requests to old cohort
+            old-responses (future
+                            (net/sync-req! (:net vnode)
+                                           (disj old-cohort self)
+                                           {:r old-maj}
+                                           req))
+            ; Issue requests to new cohort
+            responses (future
+                        (net/sync-req! (:net vnode)
+                                       (disj cohort self)
+                                       {:r maj}
+                                       req))
+
+            ; Do we have the support of the old cohort?
+            old-votes (count (filter :vote @old-responses))
+            votes (count (filter :vote @responses))]
+
+        (prn old-votes "/" old-maj "from old cohort")
+        (prn votes "/" maj "from new cohort")
+
+        (when (and (<= old-maj old-votes)
+                   (<= maj votes))
+          ; Todo: sync claim set from old cohort
+
+          ; Update ZK with new cohort and epoch--but only if we won.
+          (let [new-leader {:epoch epoch
+                            :cohort cohort}
+                set-leader (curator/swap!! (zk-leader vnode)
+                                           (fn [current]
+                                             (if (= old current)
+                                               new-leader
+                                               current)))]
+            (if (= new-leader set-leader)
+              ; Success!
+              (let [state (swap! (:state vnode)
+                                 (fn [state]
+                                   (if (= epoch (:epoch state))
+                                     ; Still waiting for responses
+                                     (assoc state :type :leader)
+                                     ; We voted for someone else in the meantime
+                                     state)))]
+                (prn "election successful: cohort now" epoch cohort)
+                ))))))))
 
 (defn request-vote!
   "Accepts a new-leader message from a peer, and returns a vote for the
   node--or an error if our epoch is current or newer. Returns a response
   message."
   [vnode msg]
-  (let [{:keys [nodes epoch leader]} msg
-    ; We set :vote to true only if we're voting for this node; otherwise it's
-    ; false. Then we can just return our state to our peer.
-    state (swap! (:state vnode) (fn [state]
-                            (if (< (:epoch state) epoch)
-                              ; The leader is ahead of us.
-                              (merge state
-                                     {:epoch epoch
-                                      :nodes nodes
-                                      :leader leader
-                                      :type :follower
-                                      :vote  true})
-                              (assoc state :vote false))))]
+  (let [{:keys [cohort epoch leader]} msg
+        ; We set :vote to true only if we're voting for this node; otherwise
+        ; it's false. Then we can just return our state to our peer.
+        state (swap! (:state vnode) (fn [state]
+                                      (if (< (:epoch state) epoch)
+                                        ; The leader is ahead of us.
+                                        (merge state
+                                               {:epoch epoch
+                                                :cohort cohort
+                                                :leader leader
+                                                :type :follower
+                                                :vote  true})
+                                        (assoc state :vote false))))]
     state))
 
 (defn state

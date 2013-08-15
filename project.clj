@@ -15,7 +15,8 @@
                  [org.clojure/data.codec "0.1.0"]
                  [primitive-math "0.1.2"]
                  [potemkin "0.3.0"]
-                 [merkle "0.1.0-SNAPSHOT"]]
+                 [merkle "0.1.0-SNAPSHOT"]
+                 [org.apache.curator/curator-recipes "2.0.1-incubating"]]
   :warn-on-reflection true
   :profiles {:dev {:dependencies [[criterium "0.4.1"]
                                   [com.google.guava/guava "14.0.1"]]}}
