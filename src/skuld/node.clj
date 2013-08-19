@@ -231,6 +231,47 @@
                        {}
                        (:partitions msg))})
 
+(defn claim-local!
+  "Tries to claim a task from a local vnode."
+  [node msg]
+  (prn "claim-local: vnodes are" (->> node vnodes vals (map (juxt :partition vnode/state))))
+  (prn "claim-local: leaders are" (->> node vnodes vals (filter vnode/leader?) (map :partition)))
+  (->> node
+       vnodes
+       vals
+       (filter vnode/leader?)
+       (some (fn [vnode]
+               (prn "Trying claim-local! on vnode" (:partition vnode))
+               (try (vnode/claim! vnode (get msg :dt 10000))
+                    (catch Throwable t nil))))))
+
+(defn claim!
+  "Tries to claim a task."
+  [node msg]
+  ; Try a local claim first
+  (or (claim-local! node msg)
+      ; Ask each peer in turn for a task
+      (loop [peers (shuffle (peers node))]
+        (prn "Asking" (first peers) "for claim")
+        (let [[response] (net/sync-req! (:net node) [(first peers)] {}
+                                        (assoc msg :type :claim-local))]
+          (prn "response was" response)
+          (if (and (next peers)
+                   (or (nil? response)
+                       (:error response)))
+            (recur (next peers))
+            response)))))
+
+(defn request-claim!
+  "Accepts a request from a leader to claim a given task."
+  [node msg]
+  (vnode/request-claim!
+    (->> msg
+         :id
+         (partition-name node)
+         (vnode node))
+    msg))
+
 (defn wipe!
   "Wipes all data clean."
   [node msg]
@@ -263,6 +304,9 @@
        :count-tasks-local  count-tasks-local
        :list-tasks         list-tasks
        :list-tasks-local   list-tasks-local
+       :claim              claim!
+       :claim-local        claim-local!
+       :request-claim      request-claim!
        :wipe               wipe!
        :wipe-local         wipe-local!
        :request-vote       request-vote!

@@ -55,15 +55,23 @@
   [task]
   (some valid-claim? (:claims task)))
 
+(defn request-claim
+  "Tries to apply the given claim to the given task. Throws if the given claim
+  would be inconsistent."
+  [task idx claim]
+  (when-not task
+    (throw (IllegalStateException. "task is nil")))
+  (let [start (:start claim)]
+    (if (some #(<= start (:end %)) (:claims task))
+      (throw (IllegalStateException. "task already claimed"))
+      (assoc task :claims
+             (conj (:claims task) claim)))))
+
 (defn claim
   "Returns a copy of a task claimed for dt milliseconds. (last (:claims task))
   will be the claim applied. Throws if the task is presently claimed."
   [task dt]
-  (if (claimed? task)
-    (throw (IllegalStateException. "task already claimed"))
-    (assoc task :claims
-           (conj (:claims task)
-                 (new-claim dt)))))
+  (request-claim task (new-claim dt)))
 
 (defn merge-claims
   "Merges a collection of vectors of claims together."

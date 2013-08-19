@@ -34,6 +34,12 @@
   (:id (sync-req! client {} {:type :enqueue
                              :task task})))
 
+(defn claim!
+  "Claim a task for dt milliseconds. Returns a task."
+  [client dt]
+  (:task (sync-req! client {} {:type :claim
+                               :dt   dt})))
+
 (defn get-task
   "Gets a task by ID."
   [client task-id]

@@ -23,4 +23,5 @@
   :test-selectors {:default (fn [x] (not (or (:integration x)
                                              (:time x)
                                              (:bench x))))
+                   :focus :focus
                    :bench :bench})

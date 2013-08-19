@@ -26,8 +26,9 @@
    :state     (atom {:type :follower
                      :leader nil
                      :epoch 0})
-   :tasks     (atom (sorted-map))
-   :claims    (atom (sorted-map))})
+   :tasks     (atom (sorted-map))})
+
+;; Leaders
 
 (defn peers
   "Peers for this vnode."
@@ -40,6 +41,11 @@
   and cohort."
   [vnode]
   @(:zk-leader vnode))
+
+(defn net-id
+  "The net id of the node hosting this vnode."
+  [vnode]
+  (net/id (:net vnode)))
 
 (defn elect!
   "Attempt to become a primary. We need to ensure that:
@@ -92,7 +98,7 @@
   to drop their claim set."
   [vnode]
   ; First, compute the set of peers that will comprise the next epoch.
-  (let [self   (net/id (:net vnode))
+  (let [self   (net-id vnode)
         cohort (set (peers vnode))
         ; How many nodes do we need to hear from in the new cohort?
         maj    (if (cohort self)
@@ -152,8 +158,8 @@
             old-votes (count (filter :vote @old-responses))
             votes (count (filter :vote @responses))]
 
-        (prn old-votes "/" old-maj "from old cohort")
-        (prn votes "/" maj "from new cohort")
+;        (prn old-votes "/" old-maj "from old cohort")
+;        (prn votes "/" maj "from new cohort")
 
         (when (and (<= old-maj old-votes)
                    (<= maj votes))
@@ -176,7 +182,8 @@
                                      (assoc state :type :leader)
                                      ; We voted for someone else in the meantime
                                      state)))]
-                (prn "election successful: cohort now" epoch cohort)
+                (prn (:partition vnode)
+                     "election successful: cohort now" epoch cohort)
                 ))))))))
 
 (defn request-vote!
@@ -224,6 +231,8 @@
   [vnode]
   (:leader (state vnode)))
 
+;; Tasks
+
 (defn enqueue!
   "Enqueues a new task into this vnode."
   [vnode task]
@@ -255,9 +264,94 @@
   [vnode]
   (vals @(:tasks vnode)))
 
+(defn claimed
+  "A subset of tasks which are claimed."
+  [vnode]
+  (->> vnode
+       tasks
+       (filter task/claimed?)))
+
+(defn unclaimed
+  "A subset of tasks which are eligible for claim."
+  [vnode]
+  (->> vnode
+       tasks
+       (remove task/claimed?)))
+
+(defn request-claim!
+  "Applies a claim to a given task. Takes a message from a leader like
+  
+  {:epoch  The leader's epoch
+   :id     The task ID
+   :i      The index of the claim
+   :claim  A claim map}
+
+  ... and applies the given claim to our copy of that task. Returns an empty
+  map if the claim is successful, or {:error ...} if the claim failed."
+  [vnode {:keys [id epoch claim]}]
+  (try
+    (locking vnode
+      (if (= epoch (epoch vnode))
+        (do
+          (swap! (:tasks vnode)
+                 (fn [tasks]
+                   (assoc tasks id
+                          (task/request-claim (get tasks id) claim))))
+          {})
+        {:error (str "leader epoch " epoch
+                     " does not match local epoch " (epoch vnode))}))
+    (catch IllegalStateException e
+      {:error (.getMessage e)})))
+
+(defn claim!
+  "Picks a task from this vnode and claims it for dt milliseconds. Returns the
+  claimed task."
+  [vnode dt]
+  ; Compute leader state
+  (let [state     (state vnode)
+        epoch     (:epoch state)
+        cohort    (:cohort state)
+        ; How many followers need to ack us?
+        maj       (-> cohort
+                      (disj (net-id vnode))
+                      count
+                      majority
+                      dec)]
+
+    (when-not (= :leader (:type state))
+      (throw (IllegalStateException. "can't initiate claim: not a leader.")))
+
+    ; Attempt to claim a task locally.
+    (when-let [task (swap! (:tasks vnode)
+                           (fn [tasks]
+                             (let [t (->> tasks
+                                          (remove task/claimed?)
+                                          first
+                                          task/claim)]
+                               (assoc tasks (:id t) t))))]
+      (let [; Get claim details
+            i     (dec (count (:claims task)))
+            claim (nth (:claims task) i)
+
+            ; Try to replicate claim remotely
+            responses (net/sync-req! (:net vnode)
+                                     (disj cohort (net-id vnode))
+                                     {:r maj}
+                                     {:type   :request-claim
+                                      :epoch  epoch
+                                      :id     (:id task)
+                                      :i      i
+                                      :claim  claim})
+            successes (count (remove :error responses))]
+    (if (<= maj successes)
+      task
+      (throw (RuntimeException. (str "needed " maj
+                                     " acks from followers, only received "
+                                     successes))))))))
+                            
 (defn wipe!
   "Wipe a vnode's data clean."
   [vnode]
   (reset! (:tasks vnode) (sorted-map))
-  (reset! (:claims vnode) (sorted-map))
   vnode)
+

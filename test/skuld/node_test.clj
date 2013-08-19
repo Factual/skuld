@@ -43,6 +43,33 @@
   [nodes]
   (->> nodes (pmap shutdown!) doall))
 
+(defn elected?
+  "Are there leaders for all vnodes?"
+  [nodes]
+  (->> nodes
+       (map vnodes)
+       (mapcat vals)
+       (group-by :partition)
+       vals
+       (every? (partial some vnode/leader?))))
+
+(defn elect!
+  "Force election of a leader in all vnodes."
+  [nodes]
+  (prn "ensuring leaders elected")
+  (let [vnodes (->> nodes
+                    (map vnodes)
+                    (mapcat vals)
+                    (group-by :partition)
+                    vals)]
+    (while (not (elected? nodes))
+      (->> vnodes
+           (remove (partial some vnode/leader?))
+           flatten
+           rand-nth
+           vnode/elect!)))
+  (prn "leader election complete"))
+
 (use-fixtures :once
               ; Start cluster
               (fn [f] (mute (ensure-cluster!) (f)))
@@ -74,7 +101,7 @@
 
 (deftest enqueue-test
   ; Enqueue a task
-  (let [id (client/enqueue! *client* {:payload "hi there"})]
+  (let [id (client/enqueue! *client* {:data "hi there"})]
     (is id)
     (is (instance? Bytes id))
 
@@ -82,13 +109,13 @@
     (is (= (client/get-task *client* id)
            {:id id
             :logs nil
-            :payload "hi there"}))))
+            :data "hi there"}))))
 
 (deftest count-test
   ; Enqueue a few tasks
   (let [n 10]
     (dotimes [i n]
-      (client/enqueue! *client* {:payload "sup"}))
+      (client/enqueue! *client* {:data "sup"}))
 
     (is (= n (client/count-tasks *client*)))))
 
@@ -96,13 +123,20 @@
   ; Enqueue
   (let [n 10]
     (dotimes [i n]
-      (client/enqueue! *client* {:payload "sup"}))
+      (client/enqueue! *client* {:data "sup"}))
     
     ; List
     (let [tasks (client/list-tasks *client*)]
       (is (= n (count tasks)))
       (is (= (sort (map :id tasks)) (map :id tasks)))
-      (is (some :payload tasks)))))
+      (is (some :data tasks)))))
+
+(deftest ^:focus claim-test
+  ; Enqueue
+  (elect! *nodes*)
+  (prn (->> *nodes* (map vnodes) (mapcat vals) (map (juxt vnode/net-id :partition vnode/leader?))))
+  (client/enqueue! *client* {:data "hi"})
+  (prn (client/claim! *client* 1000)))
 
 (defn test-election-consistent
   "Asserts that the current state of the given vnodes is consistent, from a

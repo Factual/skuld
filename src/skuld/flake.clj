@@ -115,12 +115,20 @@
 (defn ^bytes id
   "Generate a new flake ID; returning a byte array."
   []
-  (let [t (linear-time)
-        b (ByteBuffer/allocate 20)]
-      (.putLong b t)
-      (.putInt b (count! t))
-      (.put b node-fragment*)
-      (.array b)))
+  (let [id (try
+             (let [t (linear-time)
+                   c (count! t)
+                   b (ByteBuffer/allocate 20)]
+               (.putLong b t)
+               (.putInt b (count! t))
+               (.put b node-fragment*)
+               (.array b))
+             (catch IllegalStateException e
+               ; Lost the race to count for this time; retry.
+               ::recur))]
+    (if (= id ::recur)
+      (recur)
+      id)))
 
 (defn byte-buffer
   "Wraps a byte[] in a ByteBuffer."
