@@ -289,7 +289,7 @@
   [node msg]
   (if-let [vnode (vnode node (:partition msg))]
     (vnode/request-vote! vnode msg)
-    {:error (str "no such vnode" (:partition msg) "here")}))
+    {:error (str "no such vnode " (:partition msg) " here")}))
 
 (defn handler
   "Returns a fn which handles messages for a node."

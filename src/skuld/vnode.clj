@@ -100,6 +100,11 @@
     (assoc state :vote true)
     (state vnode)))
 
+(defn demote!
+  "Forces a leader to step down."
+  [vnode]
+  (swap! (:state vnode) assoc :type :follower))
+
 (defn elect!
   "Attempt to become a primary. We need to ensure that:
 
