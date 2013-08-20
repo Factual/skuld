@@ -47,6 +47,59 @@
   [vnode]
   (net/id (:net vnode)))
 
+(defn state
+  "The current state of a vnode."
+  [vnode]
+  @(:state vnode))
+
+(defn leader?
+  "Is this vnode a leader?"
+  [vnode]
+  (= :leader (:type (state vnode))))
+
+(defn follower?
+  "Is this vnode a follower?"
+  [vnode]
+  (= :follower (:type (state vnode))))
+
+(defn epoch
+  "The current epoch for this vnode."
+  [vnode]
+  (:epoch (state vnode)))
+
+(defn leader
+  "What's the current leader for this vnode?"
+  [vnode]
+  (:leader (state vnode)))
+
+(defn accept-newer-epoch!
+  "Any node with newer epoch information than us can update us to that epoch and convert us to a follower. Returns state if epoch updated, nil otherwise."
+  [vnode msg]
+  (when-let [leader-epoch (:epoch msg)]
+    (when (< (epoch vnode) leader-epoch)
+      (let [state (-> vnode
+                      :state
+                      (swap! (fn [state]
+                               (if (< (:epoch state) leader-epoch)
+                                 {:type :follower
+                                  :epoch leader-epoch
+                                  :cohort (:cohort msg)
+                                  :leader (:leader msg)
+                                  :updated true}
+                                 (assoc state dissoc :updated)))))]
+        (when (:updated state)
+          (prn (net-id vnode) (:partition vnode) "assuming epoch" leader-epoch)
+          state)))))
+
+(defn request-vote!
+  "Accepts a new-leader message from a peer, and returns a vote for the
+  node--or an error if our epoch is current or newer. Returns a response
+  message."
+  [vnode msg]
+  (if-let [state (accept-newer-epoch! vnode msg)]
+    (assoc state :vote true)
+    (state vnode)))
+
 (defn elect!
   "Attempt to become a primary. We need to ensure that:
 
@@ -158,79 +211,41 @@
             old-votes (count (filter :vote @old-responses))
             votes (count (filter :vote @responses))]
 
-;        (prn old-votes "/" old-maj "from old cohort")
-;        (prn votes "/" maj "from new cohort")
+        ; Assume newer epochs from remote nodes.
+        (if (->> (concat @old-responses @responses)
+                 (apply max-key :epoch)
+                 (accept-newer-epoch! vnode))
 
-        (when (and (<= old-maj old-votes)
-                   (<= maj votes))
-          ; Todo: sync claim set from old cohort
+          (prn (net-id vnode) (:partition vnode)
+               "aborting candidacy due to newer epoch")
+        
+          ;        (prn old-votes "/" old-maj "from old cohort")
+          ;        (prn votes "/" maj "from new cohort")
 
-          ; Update ZK with new cohort and epoch--but only if we won.
-          (let [new-leader {:epoch epoch
-                            :cohort cohort}
-                set-leader (curator/swap!! (zk-leader vnode)
-                                           (fn [current]
-                                             (if (= old current)
-                                               new-leader
-                                               current)))]
-            (if (= new-leader set-leader)
-              ; Success!
-              (let [state (swap! (:state vnode)
-                                 (fn [state]
-                                   (if (= epoch (:epoch state))
-                                     ; Still waiting for responses
-                                     (assoc state :type :leader)
-                                     ; We voted for someone else in the meantime
-                                     state)))]
-                (prn (:partition vnode)
-                     "election successful: cohort now" epoch cohort)
-                ))))))))
+          (when (and (<= old-maj old-votes)
+                     (<= maj votes))
+            ; Todo: sync claim set from old cohort
 
-(defn request-vote!
-  "Accepts a new-leader message from a peer, and returns a vote for the
-  node--or an error if our epoch is current or newer. Returns a response
-  message."
-  [vnode msg]
-  (let [{:keys [cohort epoch leader]} msg
-        ; We set :vote to true only if we're voting for this node; otherwise
-        ; it's false. Then we can just return our state to our peer.
-        state (swap! (:state vnode) (fn [state]
-                                      (if (< (:epoch state) epoch)
-                                        ; The leader is ahead of us.
-                                        (merge state
-                                               {:epoch epoch
-                                                :cohort cohort
-                                                :leader leader
-                                                :type :follower
-                                                :vote  true})
-                                        (assoc state :vote false))))]
-    state))
-
-(defn state
-  "The current state of a vnode."
-  [vnode]
-  @(:state vnode))
-
-(defn leader?
-  "Is this vnode a leader?"
-  [vnode]
-  (= :leader (:type (state vnode))))
-
-(defn follower?
-  "Is this vnode a follower?"
-  [vnode]
-  (= :follower (:type (state vnode))))
-
-(defn epoch
-  "The current epoch for this vnode."
-  [vnode]
-  (:epoch (state vnode)))
-
-(defn leader
-  "What's the current leader for this vnode?"
-  [vnode]
-  (:leader (state vnode)))
-
+            ; Update ZK with new cohort and epoch--but only if we won.
+            (let [new-leader {:epoch epoch
+                              :cohort cohort}
+                  set-leader (curator/swap!! (zk-leader vnode)
+                                             (fn [current]
+                                               (if (= old current)
+                                                 new-leader
+                                                 current)))]
+              (if (= new-leader set-leader)
+                ; Success!
+                (let [state (swap! (:state vnode)
+                                   (fn [state]
+                                     (if (= epoch (:epoch state))
+                                       ; Still waiting for responses
+                                       (assoc state :type :leader)
+                                       ; We voted for someone else in the meantime
+                                       state)))]
+                  (prn (:partition vnode)
+                       "election successful: cohort now" epoch cohort)
+                  )))))))))
 ;; Tasks
 
 (defn enqueue!
