@@ -134,9 +134,12 @@
 (deftest ^:focus claim-test
   ; Enqueue
   (elect! *nodes*)
-  (prn (->> *nodes* (map vnodes) (mapcat vals) (map (juxt vnode/net-id :partition vnode/leader?))))
+  (prn (->> *nodes*
+            (map vnodes)
+            (mapcat vals)
+            (map (juxt vnode/net-id :partition vnode/leader?))))
   (client/enqueue! *client* {:data "hi"})
-  (prn (client/claim! *client* 1000)))
+  (prn (client/claim! *client* {:timeout 50000} 1000)))
 
 (defn test-election-consistent
   "Asserts that the current state of the given vnodes is consistent, from a

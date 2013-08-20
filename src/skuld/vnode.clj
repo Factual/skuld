@@ -150,6 +150,7 @@
   we inform all zombies which are not a part of our new cohort that it is safe
   to drop their claim set."
   [vnode]
+  (prn (net-id vnode) (:partition vnode) "initiating election")
   ; First, compute the set of peers that will comprise the next epoch.
   (let [self   (net-id vnode)
         cohort (set (peers vnode))
@@ -207,20 +208,27 @@
                                        {:r maj}
                                        req))
 
+            all-responses (concat @old-responses @responses)
+
             ; Do we have the support of the old cohort?
             old-votes (count (filter :vote @old-responses))
             votes (count (filter :vote @responses))]
 
+        (prn "Responses" all-responses)
+
         ; Assume newer epochs from remote nodes.
-        (if (->> (concat @old-responses @responses)
-                 (apply max-key :epoch)
-                 (accept-newer-epoch! vnode))
+        (if (and (< 0 (count all-responses))
+                 (->> all-responses
+                      (remove :error)
+                      (apply max-key :epoch)
+                      (accept-newer-epoch! vnode)))
 
           (prn (net-id vnode) (:partition vnode)
                "aborting candidacy due to newer epoch")
-        
-          ;        (prn old-votes "/" old-maj "from old cohort")
-          ;        (prn votes "/" maj "from new cohort")
+       
+          (do
+            (prn old-votes "/" old-maj "from old cohort")
+            (prn votes "/" maj "from new cohort")
 
           (when (and (<= old-maj old-votes)
                      (<= maj votes))
@@ -243,9 +251,11 @@
                                        (assoc state :type :leader)
                                        ; We voted for someone else in the meantime
                                        state)))]
-                  (prn (:partition vnode)
-                       "election successful: cohort now" epoch cohort)
-                  )))))))))
+                  (prn (net-id vnode) (:partition vnode)
+                       "election successful: cohort now" epoch cohort))
+                (prn (net-id vnode) (:partition vnode)
+                     "election failed; not enough votes"))))))))))
+
 ;; Tasks
 
 (defn enqueue!

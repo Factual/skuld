@@ -36,9 +36,11 @@
 
 (defn claim!
   "Claim a task for dt milliseconds. Returns a task."
-  [client dt]
-  (:task (sync-req! client {} {:type :claim
-                               :dt   dt})))
+  ([client dt]
+   (claim! client {} dt))
+  ([client opts dt]
+   (:task (sync-req! client opts {:type :claim
+                                  :dt   dt}))))
 
 (defn get-task
   "Gets a task by ID."
