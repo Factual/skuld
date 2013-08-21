@@ -176,7 +176,9 @@
   [node msg]
   {:partitions
    (reduce (fn [counts [k vnode]]
-             (assoc counts k (vnode/count-tasks vnode)))
+             (if (vnode/active? vnode)
+               (assoc counts k (vnode/count-tasks vnode))
+               counts))
            {}
            (vnodes node))})
 

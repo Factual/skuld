@@ -64,6 +64,11 @@
   [vnode]
   (= :follower (:type (state vnode))))
 
+(defn active?
+  "Is this vnode a leader or peer?"
+  [vnode]
+  (or (leader? vnode) (follower? vnode)))
+
 (defn zombie?
   "Is this vnode a zombie?"
   [vnode]
