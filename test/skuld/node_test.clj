@@ -165,7 +165,8 @@
     (doseq [leader leaders]
       ; Find all nodes which this leader could write to
       (let [cohort (->> states
-                        (filter #(and (= (:epoch leader) (:epoch %))
+                        (filter #(and (= :follower (:type %))
+                                      (= (:epoch leader) (:epoch %))
                                       (= (:cohort leader) (:cohort %)))))]
         ; The cohort should be a subset of the leader's known nodes
         (is (set/subset? (set (map :id cohort))
