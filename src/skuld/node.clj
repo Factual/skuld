@@ -229,7 +229,11 @@
 (defn list-tasks-local
   [node msg]
   {:partitions (reduce (fn [m part]
-                         (assoc m part (vnode/tasks (vnode node part))))
+                         (if-let [vnode (vnode node part)]
+                           (if (vnode/active? vnode)
+                             (assoc m part (vnode/tasks vnode))
+                             m)
+                           m))
                        {}
                        (:partitions msg))})
 
