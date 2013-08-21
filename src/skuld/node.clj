@@ -214,9 +214,9 @@
                 (let [responses (swap! responses merge (:partitions response))]
                   (when (= all-parts (set (keys responses)))
                     (deliver done responses)))))
-    (deref done 5000
-           {:error "did not receive a complete set of responses for coverage query"
-            :partitions @responses})))
+    (or (deref done 5000 false)
+        (throw (RuntimeException.
+                 "did not receive a complete set of responses for coverage query")))))
 
 (defn list-tasks
   "Lists all tasks in the system."
