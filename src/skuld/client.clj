@@ -44,10 +44,12 @@
 
 (defn get-task
   "Gets a task by ID."
-  [client task-id]
-  (:task (sync-req! client {} {:type :get-task
-                               :r    3
-                               :id   task-id})))
+  ([client task-id]
+   (get-task client {} task-id))
+  ([client opts task-id]
+   (:task (sync-req! client {} {:type :get-task
+                                :r    (:r opts)
+                                :id   task-id}))))
 
 (defn count-tasks
   "Returns a count of how many tasks are in the cluster."
