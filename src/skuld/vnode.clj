@@ -64,6 +64,16 @@
   [vnode]
   (= :follower (:type (state vnode))))
 
+(defn zombie?
+  "Is this vnode a zombie?"
+  [vnode]
+  (= :zombie (:type (state vnode))))
+
+(defn dead?
+  "Is this vnode dead?"
+  [vnode]
+  (= :dead (:type (state vnode))))
+
 (defn epoch
   "The current epoch for this vnode."
   [vnode]
@@ -84,14 +94,17 @@
                       :state
                       (swap! (fn [state]
                                (if (< (:epoch state) leader-epoch)
-                                 {:type :follower
+                                 {:type (if (= :zombie (:type state))
+                                          :zombie
+                                          :follower)
                                   :epoch leader-epoch
                                   :cohort (:cohort msg)
                                   :leader (:leader msg)
                                   :updated true}
                                  (assoc state dissoc :updated)))))]
         (when (:updated state)
-          (prn (net-id vnode) (:partition vnode) "assuming epoch" leader-epoch)
+          (locking *out*
+            (prn (net-id vnode) (:partition vnode) "assuming epoch" leader-epoch))
           state)))))
 
 (defn request-vote!
@@ -106,7 +119,40 @@
 (defn demote!
   "Forces a leader to step down."
   [vnode]
-  (swap! (:state vnode) assoc :type :follower))
+  (locking vnode
+    (prn (net-id vnode) (:partition vnode) "demoted")
+    (swap! (:state vnode) (fn [state]
+                           (if (= :leader (:type state))
+                             (assoc state :type :follower)
+                             state)))))
+
+(defn zombie!
+  "Places the vnode into an immutable zombie mode, where it waits to hand off
+  its data to a leader."
+  [vnode]
+  (locking vnode
+    (prn (net-id vnode) (:partition vnode) "now zombie")
+    (swap! (:state vnode) assoc :type :zombie)))
+
+(defn revive!
+  "Converts dead or zombie vnodes into followers."
+  [vnode]
+  (locking vnode
+    (prn (net-id vnode) (:partition vnode) "revived!")
+    (swap! (:state vnode) (fn [state]
+                            (if (#{:zombie :dead} (:type state))
+                              (assoc state :type :follower)
+                              state)))))
+
+(defn kill!
+  "Converts a zombie to state :dead, so that it can be cleaned up by the node."
+  [vnode]
+  (locking vnode
+    (prn (net-id vnode) (:partition vnode) "slain!")
+    (swap! (:state vnode) (fn [state]
+                            (if (= :zombie (:type state))
+                              (assoc state :type :dead)
+                              state)))))
 
 (defn majority-excluding-self
   "Given a vnode, and a set of nodes, how many responses from *other* nodes
@@ -198,12 +244,16 @@
         old (deref (zk-leader vnode))]
     (if (<= epoch (:epoch old))
       ; We're outdated; fast-forward to the new epoch.
-      (swap! (:state vnode) (fn [state]
-                              (merge state {:epoch (max (:epoch state)
-                                                        (:epoch old))
-                                            :leader false
-                                            :type :follower
-                                            :cohort (:cohort old)})))
+      (do
+        (locking *out*
+          (prn "Outdated epoch relative to ZK; aborting election"))
+        (swap! (:state vnode) (fn [state]
+                                (if (<= (:epoch state) (:epoch old))
+                                  (merge state {:epoch (:epoch old)
+                                                :leader false
+                                                :type :follower
+                                                :cohort (:cohort old)})
+                                  state))))
 
       ; Issue requests to all nodes in old and new cohorts
       (let [old-cohort  (set (:cohort old))
@@ -214,8 +264,6 @@
           (prn :old old-cohort)
           (prn :new new-cohort))
         (doseq [node peers]
-          (locking *out*
-            (prn "sending to" node))
           (net/req! (:net vnode) (list node) {:r 1}
                     {:type :request-vote
                      :partition (:partition vnode)
@@ -227,18 +275,21 @@
                       (if (accept-newer-epoch! vnode r)
                         ; Cancel request; we saw a newer epoch from a peer.
                         (do
-                          (prn (net-id vnode) (:partition vnode)
-                               "aborting candidacy due to newer epoch")
+                          (locking *out*
+                            (prn (net-id vnode) (:partition vnode)
+                                 "aborting candidacy due to newer epoch"))
                           (deliver accepted? false))
                         ; Have we enough votes?
                         (if (sufficient-votes? vnode old-cohort new-cohort rs)
                           (do
-                            (prn "Received enough votes:" rs)
-                            (deliver accepted? true))
+                            (deliver accepted? true)
+                            (locking *out*
+                              (prn "Received enough votes:" rs)))
 
                           (when (<= (count peers) (count rs))
-                            (prn "All votes in; giving up.")
-                            (deliver accepted? false)))))))
+                            (deliver accepted? false)
+                            (locking *out*
+                              (prn "All votes in; giving up."))))))))
 
         ; Await responses
         (if (deref accepted? 5000 false)
@@ -262,12 +313,15 @@
                                      (assoc state :type :leader)
                                      ; We voted for someone else in the meantime
                                      state)))]
+                (locking *out*
+                  (prn (net-id vnode) (:partition vnode)
+                       "election successful: cohort now" epoch new-cohort)))
+              (locking *out*
                 (prn (net-id vnode) (:partition vnode)
-                     "election successful: cohort now" epoch new-cohort))
-              (prn (net-id vnode) (:partition vnode)
-                   "election failed: another leader updated zk")))
-          (prn (net-id vnode) (:partition vnode)
-               "election failed; not enough votes"))))))
+                     "election failed: another leader updated zk"))))
+          (locking *out*
+            (prn (net-id vnode) (:partition vnode)
+                 "election failed; not enough votes")))))))
 
 ;; Tasks
 
@@ -329,6 +383,7 @@
   [vnode {:keys [id epoch claim]}]
   (try
     (locking vnode
+      (assert (not (zombie? vnode)))
       (if (= epoch (epoch vnode))
         (do
           (swap! (:tasks vnode)

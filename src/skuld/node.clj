@@ -234,14 +234,14 @@
 (defn claim-local!
   "Tries to claim a task from a local vnode."
   [node msg]
-  (prn "claim-local: vnodes are" (->> node vnodes vals (map (juxt :partition vnode/state))))
-  (prn "claim-local: leaders are" (->> node vnodes vals (filter vnode/leader?) (map :partition)))
+;  (prn "claim-local: vnodes are" (->> node vnodes vals (map (juxt :partition vnode/state))))
+;  (prn "claim-local: leaders are" (->> node vnodes vals (filter vnode/leader?) (map :partition)))
   (->> node
        vnodes
        vals
        (filter vnode/leader?)
        (some (fn [vnode]
-               (prn "Trying claim-local! on vnode" (:partition vnode))
+;               (prn "Trying claim-local! on vnode" (:partition vnode))
                (try (vnode/claim! vnode (get msg :dt 10000))
                     (catch Throwable t nil))))))
 
@@ -252,10 +252,10 @@
   (or (claim-local! node msg)
       ; Ask each peer in turn for a task
       (loop [peers (shuffle (peers node))]
-        (prn "Asking" (first peers) "for claim")
+;        (prn "Asking" (first peers) "for claim")
         (let [[response] (net/sync-req! (:net node) [(first peers)] {}
                                         (assoc msg :type :claim-local))]
-          (prn "response was" response)
+;          (prn "response was" response)
           (if (and (next peers)
                    (or (nil? response)
                        (:error response)))
@@ -289,7 +289,12 @@
   [node msg]
   (if-let [vnode (vnode node (:partition msg))]
     (vnode/request-vote! vnode msg)
-    {:error (str "no such vnode " (:partition msg) " here")}))
+    (do
+      (locking *out*
+        (prn (net/id (:net node)) "has no vnode for" (:partition msg))
+        (prn (:partition msg) "lives on" (peers node (:partition msg))))
+      {:error (str (net/id (:net node))
+                           " has no vnode for " (:partition msg))})))
 
 (defn handler
   "Returns a fn which handles messages for a node."
@@ -329,17 +334,20 @@
   (clj-helix.fsm/fsm
     fsm-def
     (:offline :peer [part m c]
-              (swap! vnodes assoc part
-                     (vnode/vnode {:partition part
-                                   :curator curator
-                                   :router @routerp
-                                   :net net})))
+              (swap! vnodes (fn [vnodes]
+                              (if-let [existing (get vnodes part)]
+                                (do (vnode/revive! existing)
+                                    vnodes)
+                                (assoc vnodes part
+                                       (vnode/vnode {:partition part
+                                                     :curator curator
+                                                     :router @routerp
+                                                     :net net}))))))
 
     (:offline :DROPPED [part m c])
 
     (:peer :offline [part m c]
-           (locking *out*
-             (swap! vnodes dissoc part)))))
+           (vnode/zombie! (get @vnodes part)))))
 
 (defn node
   "Creates a new node with the given options.

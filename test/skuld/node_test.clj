@@ -34,9 +34,16 @@
 (defn start-nodes!
   "Returns a vector of a bunch of started nodes."
   []
-  (->> (range 5)
-       (pmap #(node {:port (+ 13000 %)}))
-       doall))
+  (let [nodes (->> (range 5)
+                   (pmap #(node {:port (+ 13000 %)}))
+                   doall)
+        vnodes (->> nodes
+                    (map vnodes)
+                    (mapcat vals))]
+    (doseq [vnode vnodes]
+      (curator/reset!! (vnode/zk-leader vnode) {:epoch 0
+                                                :cohort #{}}))
+    nodes))
 
 (defn shutdown-nodes!
   "Shutdown a seq of nodes."
@@ -55,7 +62,8 @@
 (defn elect!
   "Force election of a leader in all vnodes."
   [nodes]
-  (prn "ensuring leaders elected")
+  (locking *out*
+    (prn "ensuring leaders elected"))
   (loop [unelected (->> nodes
                         (map vnodes)
                         (mapcat vals)
@@ -63,11 +71,12 @@
                         vals
                         (remove partition-available?))]
       (when-not (empty? unelected)
-        (prn (count unelected) "unelected partitions")
-        (->> unelected
-             (map rand-nth)
-             (map vnode/elect!)
-             dorun)
+        (locking *out*
+          (prn (count unelected) "unelected partitions:")
+          (prn (map (partial map (juxt vnode/net-id :partition vnode/state))
+                    unelected)))
+        (doseq [vnodes unelected]
+          (vnode/elect! (rand-nth vnodes)))
         (Thread/sleep 100)
         (recur (remove partition-available? unelected))))
   (prn "leader election complete"))
@@ -179,18 +188,6 @@
     (testing "Initially"
       (test-election-consistent vnodes))
 
-    (testing "A single candidate"
-      (curator/reset!! (vnode/zk-leader (first vnodes)) {:epoch 0
-                                                         :cohort #{}})
-      (vnode/elect! (first vnodes))
-      ; First node becomes leader
-      (is (vnode/leader? (first vnodes)))
-      ; Is consistent
-      (test-election-consistent vnodes)
-      ; Majority of nodes agree on the leader's epoch
-      (is (= (majority-value (map vnode/epoch vnodes))
-             (vnode/epoch (first vnodes)))))
-
     (testing "Stress"
       (let [running (promise)]
         ; Measure consistency continuously
@@ -217,5 +214,5 @@
             (map vnodes)
             (mapcat vals)
             (map (juxt vnode/net-id :partition vnode/leader?))))
-  (client/enqueue! *client* {:data "hi"})
-  (prn :client-got (client/claim! *client* {:timeout 50000} 1000)))
+  (client/enqueue! *client* {:data "hi"}))
+;  (prn :client-got (client/claim! *client* {:timeout 50000} 1000)))
