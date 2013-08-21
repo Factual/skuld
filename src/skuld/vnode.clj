@@ -5,7 +5,8 @@
   (:require [skuld.task :as task]
             [skuld.net  :as net]
             [skuld.curator :as curator]
-            [clj-helix.route :as route])
+            [clj-helix.route :as route]
+            [clojure.set :as set])
   (:import com.aphyr.skuld.Bytes))
 
 (defn vnode
@@ -33,8 +34,9 @@
 (defn peers
   "Peers for this vnode."
   [vnode]
-  (map #(select-keys % [:host :port])
-    (route/instances (:router vnode) :skuld (:partition vnode) :peer)))
+  (doall
+    (map #(select-keys % [:host :port])
+      (route/instances (:router vnode) :skuld (:partition vnode) :peer))))
 
 (defn zk-leader
   "A curator distributed atom backed by Zookeeper, containing the current epoch
@@ -73,7 +75,8 @@
   (:leader (state vnode)))
 
 (defn accept-newer-epoch!
-  "Any node with newer epoch information than us can update us to that epoch and convert us to a follower. Returns state if epoch updated, nil otherwise."
+  "Any node with newer epoch information than us can update us to that epoch
+  and convert us to a follower. Returns state if epoch updated, nil otherwise."
   [vnode msg]
   (when-let [leader-epoch (:epoch msg)]
     (when (< (epoch vnode) leader-epoch)
@@ -97,13 +100,34 @@
   message."
   [vnode msg]
   (if-let [state (accept-newer-epoch! vnode msg)]
-    (assoc state :vote true)
+    (assoc state :vote (net-id vnode))
     (state vnode)))
 
 (defn demote!
   "Forces a leader to step down."
   [vnode]
   (swap! (:state vnode) assoc :type :follower))
+
+(defn majority-excluding-self
+  "Given a vnode, and a set of nodes, how many responses from *other* nodes
+  (i.e. assuming we vote yes for ourself) are required to comprise a majority
+  of the set?"
+  [vnode cohort]
+  ((if (cohort (net-id vnode)) dec identity)
+   (majority (count cohort))))
+
+(defn sufficient-votes?
+  "Given a vnode, old cohort, and new cohort, does the given collection of
+  request-vote responses allow us to become a leader?"
+  [vnode old-cohort new-cohort votes]
+  (locking *out*
+    (prn :votes)
+    (doseq [v votes] (prn v)))
+  (let [votes (set (keep :vote votes))]
+    (and (<= (majority-excluding-self vnode old-cohort)
+             (count (set/intersection old-cohort votes)))
+         (<= (majority-excluding-self vnode new-cohort)
+             (count (set/intersection new-cohort votes))))))
 
 (defn elect!
   "Attempt to become a primary. We need to ensure that:
@@ -158,12 +182,7 @@
   (prn (net-id vnode) (:partition vnode) "initiating election")
   ; First, compute the set of peers that will comprise the next epoch.
   (let [self   (net-id vnode)
-        cohort (set (peers vnode))
-        ; How many nodes do we need to hear from in the new cohort?
-        maj    (if (cohort self)
-                 (dec (majority (count cohort)))
-                 (majority (count cohort)))
-        others (remove #{self} cohort)
+        new-cohort (set (peers vnode))
 
         ; Increment the epoch and update the node set.
         epoch (-> vnode
@@ -172,7 +191,7 @@
                            (merge state {:epoch (inc (:epoch state))
                                          :leader self
                                          :type :candidate
-                                         :cohort cohort})))
+                                         :cohort new-cohort})))
                   :epoch)
 
         ; Check ZK's last leader information
@@ -182,84 +201,73 @@
       (swap! (:state vnode) (fn [state]
                               (merge state {:epoch (max (:epoch state)
                                                         (:epoch old))
-                                            :leader nil
+                                            :leader false
                                             :type :follower
                                             :cohort (:cohort old)})))
 
-      (let [old-cohort (set (:cohort old))
+      ; Issue requests to all nodes in old and new cohorts
+      (let [old-cohort  (set (:cohort old))
+            responses   (atom (list))
+            accepted?   (promise)
+            peers       (disj (set/union new-cohort old-cohort) self)]
+        (locking *out*
+          (prn :old old-cohort)
+          (prn :new new-cohort))
+        (doseq [node peers]
+          (locking *out*
+            (prn "sending to" node))
+          (net/req! (:net vnode) (list node) {:r 1}
+                    {:type :request-vote
+                     :partition (:partition vnode)
+                     :leader self
+                     :cohort new-cohort
+                     :epoch epoch}
+                    [[r]]
+                    (let [rs (swap! responses conj r)]
+                      (if (accept-newer-epoch! vnode r)
+                        ; Cancel request; we saw a newer epoch from a peer.
+                        (do
+                          (prn (net-id vnode) (:partition vnode)
+                               "aborting candidacy due to newer epoch")
+                          (deliver accepted? false))
+                        ; Have we enough votes?
+                        (if (sufficient-votes? vnode old-cohort new-cohort rs)
+                          (do
+                            (prn "Received enough votes:" rs)
+                            (deliver accepted? true))
 
-            ; How many nodes do we need to hear from to constitute a majority?
-            old-maj (if (old-cohort self)
-                      (dec (majority (count old-cohort)))
-                      (majority (count old-cohort)))
+                          (when (<= (count peers) (count rs))
+                            (prn "All votes in; giving up.")
+                            (deliver accepted? false)))))))
 
-            ; Our vote request
-            req {:type :request-vote
-                 :partition (:partition vnode)
-                 :leader (net/id (:net vnode))
-                 :cohort cohort
-                 :epoch epoch}
+        ; Await responses
+        (if (deref accepted? 5000 false)
+          ; Todo: sync claim set from old cohort
 
-            ; Issue requests to old cohort
-            old-responses (future
-                            (net/sync-req! (:net vnode)
-                                           (disj old-cohort self)
-                                           {:r old-maj}
-                                           req))
-            ; Issue requests to new cohort
-            responses (future
-                        (net/sync-req! (:net vnode)
-                                       (disj cohort self)
-                                       {:r maj}
-                                       req))
-
-            all-responses (concat @old-responses @responses)
-
-            ; Do we have the support of the old cohort?
-            old-votes (count (filter :vote @old-responses))
-            votes (count (filter :vote @responses))]
-
-        (prn "Responses" all-responses)
-
-        ; Assume newer epochs from remote nodes.
-        (if (and (< 0 (count all-responses))
-                 (->> all-responses
-                      (remove :error)
-                      (apply max-key :epoch)
-                      (accept-newer-epoch! vnode)))
-
-          (prn (net-id vnode) (:partition vnode)
-               "aborting candidacy due to newer epoch")
-       
-          (do
-            (prn old-votes "/" old-maj "from old cohort")
-            (prn votes "/" maj "from new cohort")
-
-          (when (and (<= old-maj old-votes)
-                     (<= maj votes))
-            ; Todo: sync claim set from old cohort
-
-            ; Update ZK with new cohort and epoch--but only if we won.
-            (let [new-leader {:epoch epoch
-                              :cohort cohort}
-                  set-leader (curator/swap!! (zk-leader vnode)
-                                             (fn [current]
-                                               (if (= old current)
-                                                 new-leader
-                                                 current)))]
-              (if (= new-leader set-leader)
-                ; Success!
-                (let [state (swap! (:state vnode)
-                                   (fn [state]
-                                     (if (= epoch (:epoch state))
-                                       ; Still waiting for responses
-                                       (assoc state :type :leader)
-                                       ; We voted for someone else in the meantime
-                                       state)))]
-                  (prn (net-id vnode) (:partition vnode)
-                       "election successful: cohort now" epoch cohort))
+          ; Update ZK with new cohort and epoch--but only if nobody else
+          ; got there first.
+          (let [new-leader {:epoch epoch
+                            :cohort new-cohort}
+                set-leader (curator/swap!! (zk-leader vnode)
+                                           (fn [current]
+                                             (if (= old current)
+                                               new-leader
+                                               current)))]
+            (if (= new-leader set-leader)
+              ; Success!
+              (let [state (swap! (:state vnode)
+                                 (fn [state]
+                                   (if (= epoch (:epoch state))
+                                     ; Still waiting for responses
+                                     (assoc state :type :leader)
+                                     ; We voted for someone else in the meantime
+                                     state)))]
                 (prn (net-id vnode) (:partition vnode)
-                     "election failed; not enough votes"))))))))))
+                     "election successful: cohort now" epoch new-cohort))
+              (prn (net-id vnode) (:partition vnode)
+                   "election failed: another leader updated zk")))
+          (prn (net-id vnode) (:partition vnode)
+               "election failed; not enough votes"))))))
 
 ;; Tasks
 
