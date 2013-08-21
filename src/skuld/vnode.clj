@@ -31,6 +31,12 @@
 
 ;; Leaders
 
+(defmacro llog
+  "Log leader election messages"
+  [& args])
+;  (locking *out*
+;    (apply prn args)))
+
 (defn peers
   "Peers for this vnode."
   [vnode]
@@ -108,8 +114,8 @@
                                   :updated true}
                                  (assoc state dissoc :updated)))))]
         (when (:updated state)
-          (locking *out*
-            (prn (net-id vnode) (:partition vnode) "assuming epoch" leader-epoch))
+          (llog (net-id vnode) (:partition vnode)
+                "assuming epoch" leader-epoch)
           state)))))
 
 (defn request-vote!
@@ -171,9 +177,6 @@
   "Given a vnode, old cohort, and new cohort, does the given collection of
   request-vote responses allow us to become a leader?"
   [vnode old-cohort new-cohort votes]
-  (locking *out*
-    (prn :votes)
-    (doseq [v votes] (prn v)))
   (let [votes (set (keep :vote votes))]
     (and (<= (majority-excluding-self vnode old-cohort)
              (count (set/intersection old-cohort votes)))
@@ -230,9 +233,9 @@
   we inform all zombies which are not a part of our new cohort that it is safe
   to drop their claim set."
   [vnode]
-  (prn (net-id vnode) (:partition vnode) "initiating election")
+  (llog (net-id vnode) (:partition vnode) "initiating election")
   ; First, compute the set of peers that will comprise the next epoch.
-  (let [self   (net-id vnode)
+  (let [self       (net-id vnode)
         new-cohort (set (peers vnode))
 
         ; Increment the epoch and update the node set.
@@ -250,8 +253,7 @@
     (if (<= epoch (:epoch old))
       ; We're outdated; fast-forward to the new epoch.
       (do
-        (locking *out*
-          (prn "Outdated epoch relative to ZK; aborting election"))
+        (llog "Outdated epoch relative to ZK; aborting election")
         (swap! (:state vnode) (fn [state]
                                 (if (<= (:epoch state) (:epoch old))
                                   (merge state {:epoch (:epoch old)
@@ -265,9 +267,8 @@
             responses   (atom (list))
             accepted?   (promise)
             peers       (disj (set/union new-cohort old-cohort) self)]
-        (locking *out*
-          (prn :old old-cohort)
-          (prn :new new-cohort))
+        (llog :old old-cohort)
+        (llog :new new-cohort)
         (doseq [node peers]
           (net/req! (:net vnode) (list node) {:r 1}
                     {:type :request-vote
@@ -280,21 +281,17 @@
                       (if (accept-newer-epoch! vnode r)
                         ; Cancel request; we saw a newer epoch from a peer.
                         (do
-                          (locking *out*
-                            (prn (net-id vnode) (:partition vnode)
-                                 "aborting candidacy due to newer epoch"))
-                          (deliver accepted? false))
+                          (deliver accepted? false)
+                          (llog (net-id vnode) (:partition vnode)
+                                       "aborting candidacy due to newer epoch"))
                         ; Have we enough votes?
                         (if (sufficient-votes? vnode old-cohort new-cohort rs)
                           (do
                             (deliver accepted? true)
-                            (locking *out*
-                              (prn "Received enough votes:" rs)))
-
+                            (llog "Received enough votes:" rs))
                           (when (<= (count peers) (count rs))
                             (deliver accepted? false)
-                            (locking *out*
-                              (prn "All votes in; giving up."))))))))
+                            (llog "All votes in; giving up.")))))))
 
         ; Await responses
         (if (deref accepted? 5000 false)
@@ -318,15 +315,12 @@
                                      (assoc state :type :leader)
                                      ; We voted for someone else in the meantime
                                      state)))]
-                (locking *out*
-                  (prn (net-id vnode) (:partition vnode)
-                       "election successful: cohort now" epoch new-cohort)))
-              (locking *out*
-                (prn (net-id vnode) (:partition vnode)
-                     "election failed: another leader updated zk"))))
-          (locking *out*
-            (prn (net-id vnode) (:partition vnode)
-                 "election failed; not enough votes")))))))
+                  (llog (net-id vnode) (:partition vnode)
+                       "election successful: cohort now" epoch new-cohort))
+                (llog (net-id vnode) (:partition vnode)
+                     "election failed: another leader updated zk")))
+            (llog (net-id vnode) (:partition vnode)
+                 "election failed; not enough votes"))))))
 
 ;; Tasks
 

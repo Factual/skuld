@@ -72,9 +72,9 @@
                         (remove partition-available?))]
       (when-not (empty? unelected)
         (locking *out*
-          (prn (count unelected) "unelected partitions:")
-          (prn (map (partial map (juxt vnode/net-id :partition vnode/state))
-                    unelected)))
+          (prn (count unelected) "unelected partitions"))
+;          (prn (map (partial map (juxt vnode/net-id :partition vnode/state))
+;                    unelected)))
         (doseq [vnodes unelected]
           (vnode/elect! (rand-nth vnodes)))
         (Thread/sleep 100)
