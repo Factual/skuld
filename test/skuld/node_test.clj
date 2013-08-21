@@ -160,7 +160,7 @@
     ; Exactly one leader for each epoch
     (doseq [[epoch leaders] (group-by :epoch leaders)]
       (is (= 1 (count leaders))))
- 
+
     ; For all leaders
     (doseq [leader leaders]
       ; Find all nodes which this leader could write to
@@ -168,23 +168,16 @@
                         (filter #(and (= :follower (:type %))
                                       (= (:epoch leader) (:epoch %))
                                       (= (:cohort leader) (:cohort %)))))]
-        ; The cohort should be a subset of the leader's known nodes
-        (is (set/subset? (set (map :id cohort))
-                         (set (:cohort leader))))
 
-        ; And there should be exactly one leader which could satisfy a quorum
+        ; There should be exactly one leader which could satisfy a quorum
         (when (<= (majority (count (:cohort leader)))
                   (count cohort))
-          (deliver true-leader leader))))))
+          (is (deliver true-leader leader)))))))
 
 (deftest election-test
   (let [part "skuld_0"
         nodes (filter #(vnode % part) *nodes*)
         vnodes (map #(vnode % part) nodes)]
-    (is (= 3 (count nodes)))
-    (is (apply = 3 (map (comp count vnode/peers) vnodes)))
-    (is (apply = (map vnode/peers vnodes)))
-    (is (every? identity vnodes))
 
     (testing "Initially"
       (test-election-consistent vnodes))
