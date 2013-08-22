@@ -402,7 +402,6 @@
   "Picks a task from this vnode and claims it for dt milliseconds. Returns the
   claimed task."
   [vnode dt]
-  (prn "vnode claim!" (:partition vnode))
   ; Compute leader state
   (let [state     (state vnode)
         epoch     (:epoch state)
@@ -414,12 +413,8 @@
                       majority
                       dec)]
 
-    (prn "state is" state)
-
     (when-not (= :leader (:type state))
       (throw (IllegalStateException. "can't initiate claim: not a leader.")))
-
-    (prn "I am a leader")
 
     ; Attempt to claim a task locally.
     (when-let [task (locking (:tasks vnode)
@@ -428,12 +423,10 @@
                                                 tasks
                                                 (remove task/claimed?)
                                                 first)]
-                        (prn "Unclaimed task is" unclaimed)
                         (let [claimed (task/claim unclaimed dt)]
                           ; Record local claim
                           (swap! (:tasks vnode) assoc (:id claimed) claimed)
                           claimed)))]
-      (prn "Locally claimed task is" task)
 
       (let [; Get claim details
             i     (dec (count (:claims task)))

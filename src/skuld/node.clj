@@ -95,7 +95,6 @@
   [node msg]
   (let [task (task/task (:data msg))
         id (:id task)]
-    (prn "enqueue msg" msg)
     (let [r (or (:w msg) 1)
           responses (net/sync-req! (:net node)
                                    (preflist node id)
@@ -103,7 +102,6 @@
                                    {:type    :enqueue-local
                                     :task    task})
           acks (remove :error responses)]
-      (prn "Got" (count acks) "/" r "acks for write")
       (if (<= r (count acks))
         {:n         (count acks)
          :id        id}
@@ -242,17 +240,15 @@
 (defn claim-local!
   "Tries to claim a task from a local vnode."
   [node msg]
-  (prn "claim-local on" (net/id (:net node)))
   (or (->> node
            vnodes
            vals
            (filter vnode/leader?)
            (some (fn [vnode]
-                   (prn "trying to claim on" (:partition vnode))
                    (try 
                      {:task (vnode/claim! vnode (get msg :dt 10000))}
                      (catch Throwable t (.printStackTrace t) nil)))))
-      (do (prn "no leaders had tasks to claim") {})))
+      {}))
 
 (defn claim!
   "Tries to claim a task."
@@ -266,10 +262,8 @@
         (if-not peer
           {:error "no peers had any tasks to claim"}
           (do
-            (prn "Asking" (first peers) "for claim")
             (let [[response] (net/sync-req! (:net node) [peer] {}
                                             (assoc msg :type :claim-local))]
-              (prn "response was" response)
               (if (:task response)
                 response
                 (recur peers))))))))
@@ -302,9 +296,6 @@
   (if-let [vnode (vnode node (:partition msg))]
     (vnode/request-vote! vnode msg)
     (do
-      (locking *out*
-        (prn (net/id (:net node)) "has no vnode for" (:partition msg))
-        (prn (:partition msg) "lives on" (peers node (:partition msg))))
       {:error (str (net/id (:net node))
                            " has no vnode for " (:partition msg))})))
 
