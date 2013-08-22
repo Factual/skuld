@@ -4,7 +4,8 @@
   register callbacks to receive messages."
   (:require [clojure.edn :as edn]
             [taoensso.nippy :as nippy]
-            [skuld.flake :as flake])
+            [skuld.flake :as flake]
+            [clojure.stacktrace :as trace])
   (:use clojure.tools.logging
         skuld.util) 
   (:import (com.aphyr.skuld Bytes)
@@ -103,7 +104,9 @@
                                  (locking *out*
                                    (println "Node handler caught:")
                                    (.printStackTrace t))
-                                 nil))]
+                                 {:error (str (.getMessage t)
+                                              (with-out-str
+                                                (trace/print-cause-trace t)))}))]
         (.write ctx (assoc response :request-id (:request-id message)))))))
 
 (defonce peer-attr
