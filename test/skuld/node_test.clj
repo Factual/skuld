@@ -67,6 +67,7 @@
   (loop [unelected (->> nodes
                         (map vnodes)
                         (mapcat vals)
+                        (filter vnode/active?)
                         (group-by :partition)
                         vals
                         (remove partition-available?))]
@@ -176,7 +177,10 @@
 
 (deftest election-test
   (let [part "skuld_0"
-        nodes (filter #(vnode % part) *nodes*)
+        nodes (filter (fn [node]
+                        (when-let [v (vnode node part)]
+                          (vnode/active? v)))
+                      *nodes*)
         vnodes (map #(vnode % part) nodes)]
 
     (testing "Initially"
