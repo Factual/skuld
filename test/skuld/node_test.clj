@@ -117,9 +117,9 @@
     (is (instance? Bytes id))
 
     ; Read it back
-    (is (= (client/get-task *client* id)
+    (is (= (client/get-task *client* {:r 3} id)
            {:id id
-            :logs nil
+            :claims []
             :data "hi there"}))))
 
 (deftest count-test
