@@ -234,93 +234,95 @@
   to drop their claim set."
   [vnode]
   (llog (net-id vnode) (:partition vnode) "initiating election")
-  ; First, compute the set of peers that will comprise the next epoch.
-  (let [self       (net-id vnode)
-        new-cohort (set (peers vnode))
+  (locking vnode
+    ; First, compute the set of peers that will comprise the next epoch.
+    (let [self       (net-id vnode)
+          new-cohort (set (peers vnode))
 
-        ; Increment the epoch and update the node set.
-        epoch (-> vnode
-                  :state
-                  (swap! (fn [state]
-                           (merge state {:epoch (inc (:epoch state))
-                                         :leader self
-                                         :type :candidate
-                                         :cohort new-cohort})))
-                  :epoch)
+          ; Increment the epoch and update the node set.
+          epoch (-> vnode
+                    :state
+                    (swap! (fn [state]
+                             (merge state {:epoch (inc (:epoch state))
+                                           :leader self
+                                           :type :candidate
+                                           :cohort new-cohort})))
+                    :epoch)
 
-        ; Check ZK's last leader information
-        old (deref (zk-leader vnode))]
-    (if (<= epoch (:epoch old))
-      ; We're outdated; fast-forward to the new epoch.
-      (do
-        (llog "Outdated epoch relative to ZK; aborting election")
-        (swap! (:state vnode) (fn [state]
-                                (if (<= (:epoch state) (:epoch old))
-                                  (merge state {:epoch (:epoch old)
-                                                :leader false
-                                                :type :follower
-                                                :cohort (:cohort old)})
-                                  state))))
+          ; Check ZK's last leader information
+          old (deref (zk-leader vnode))]
+      (if (<= epoch (:epoch old))
+        ; We're outdated; fast-forward to the new epoch.
+        (do
+          (llog "Outdated epoch relative to ZK; aborting election")
+          (swap! (:state vnode) (fn [state]
+                                  (if (<= (:epoch state) (:epoch old))
+                                    (merge state {:epoch (:epoch old)
+                                                  :leader false
+                                                  :type :follower
+                                                  :cohort (:cohort old)})
+                                    state))))
 
-      ; Issue requests to all nodes in old and new cohorts
-      (let [old-cohort  (set (:cohort old))
-            responses   (atom (list))
-            accepted?   (promise)
-            peers       (disj (set/union new-cohort old-cohort) self)]
-        (llog :old old-cohort)
-        (llog :new new-cohort)
-        (doseq [node peers]
-          (net/req! (:net vnode) (list node) {:r 1}
-                    {:type :request-vote
-                     :partition (:partition vnode)
-                     :leader self
-                     :cohort new-cohort
-                     :epoch epoch}
-                    [[r]]
-                    (let [rs (swap! responses conj r)]
-                      (if (accept-newer-epoch! vnode r)
-                        ; Cancel request; we saw a newer epoch from a peer.
-                        (do
-                          (deliver accepted? false)
-                          (llog (net-id vnode) (:partition vnode)
-                                       "aborting candidacy due to newer epoch"))
-                        ; Have we enough votes?
-                        (if (sufficient-votes? vnode old-cohort new-cohort rs)
+        ; Issue requests to all nodes in old and new cohorts
+        (let [old-cohort  (set (:cohort old))
+              responses   (atom (list))
+              accepted?   (promise)
+              peers       (disj (set/union new-cohort old-cohort) self)]
+          (llog :old old-cohort)
+          (llog :new new-cohort)
+          (doseq [node peers]
+            (net/req! (:net vnode) (list node) {:r 1}
+                      {:type :request-vote
+                       :partition (:partition vnode)
+                       :leader self
+                       :cohort new-cohort
+                       :epoch epoch}
+                      [[r]]
+                      (let [rs (swap! responses conj r)]
+                        (if (accept-newer-epoch! vnode r)
+                          ; Cancel request; we saw a newer epoch from a peer.
                           (do
-                            (deliver accepted? true)
-                            (llog "Received enough votes:" rs))
-                          (when (<= (count peers) (count rs))
                             (deliver accepted? false)
-                            (llog "All votes in; giving up.")))))))
+                            (llog (net-id vnode) (:partition vnode)
+                                  "aborting candidacy due to newer epoch"))
+                          ; Have we enough votes?
+                          (if (sufficient-votes? vnode old-cohort new-cohort rs)
+                            (do
+                              (deliver accepted? true)
+                              (llog "Received enough votes:" rs))
+                            (when (<= (count peers) (count rs))
+                              (deliver accepted? false)
+                              (llog "All votes in; giving up.")))))))
 
-        ; Await responses
-        (if (deref accepted? 5000 false)
-          ; Todo: sync claim set from old cohort
+          ; Await responses
+          (if (deref accepted? 5000 false)
+            ; Todo: sync claim set from old cohort
 
-          ; Update ZK with new cohort and epoch--but only if nobody else
-          ; got there first.
-          (let [new-leader {:epoch epoch
-                            :cohort new-cohort}
-                set-leader (curator/swap!! (zk-leader vnode)
-                                           (fn [current]
-                                             (if (= old current)
-                                               new-leader
-                                               current)))]
-            (if (= new-leader set-leader)
-              ; Success!
-              (let [state (swap! (:state vnode)
-                                 (fn [state]
-                                   (if (= epoch (:epoch state))
-                                     ; Still waiting for responses
-                                     (assoc state :type :leader)
-                                     ; We voted for someone else in the meantime
-                                     state)))]
+            ; Update ZK with new cohort and epoch--but only if nobody else
+            ; got there first.
+            (let [new-leader {:epoch epoch
+                              :cohort new-cohort}
+                  set-leader (curator/swap!! (zk-leader vnode)
+                                             (fn [current]
+                                               (if (= old current)
+                                                 new-leader
+                                                 current)))]
+              (if (= new-leader set-leader)
+                ; Success!
+                (let [state (swap! (:state vnode)
+                                   (fn [state]
+                                     (if (= epoch (:epoch state))
+                                       ; Still waiting for responses
+                                       (assoc state :type :leader)
+                                       ; We voted for someone else in the
+                                       ; meantime
+                                       state)))]
                   (llog (net-id vnode) (:partition vnode)
-                       "election successful: cohort now" epoch new-cohort))
+                        "election successful: cohort now" epoch new-cohort))
                 (llog (net-id vnode) (:partition vnode)
-                     "election failed: another leader updated zk")))
+                      "election failed: another leader updated zk")))
             (llog (net-id vnode) (:partition vnode)
-                 "election failed; not enough votes"))))))
+                  "election failed; not enough votes")))))))
 
 ;; Tasks
 
@@ -379,16 +381,17 @@
 
   ... and applies the given claim to our copy of that task. Returns an empty
   map if the claim is successful, or {:error ...} if the claim failed."
-  [vnode {:keys [id epoch claim]}]
+  [vnode {:keys [id i claim] :as msg}]
+;  (accept-newer-epoch! msg) todo: test this
   (try
     (locking vnode
       (assert (not (zombie? vnode)))
-      (if (= epoch (epoch vnode))
+      (if (= (:epoch msg) (epoch vnode))
         (do
           (swap! (:tasks vnode)
                  (fn [tasks]
                    (assoc tasks id
-                          (task/request-claim (get tasks id) claim))))
+                          (task/request-claim (get tasks id) i claim))))
           {})
         {:error (str "leader epoch " epoch
                      " does not match local epoch " (epoch vnode))}))
@@ -399,6 +402,7 @@
   "Picks a task from this vnode and claims it for dt milliseconds. Returns the
   claimed task."
   [vnode dt]
+  (prn "vnode claim!" (:partition vnode))
   ; Compute leader state
   (let [state     (state vnode)
         epoch     (:epoch state)
@@ -410,17 +414,27 @@
                       majority
                       dec)]
 
+    (prn "state is" state)
+
     (when-not (= :leader (:type state))
       (throw (IllegalStateException. "can't initiate claim: not a leader.")))
 
+    (prn "I am a leader")
+
     ; Attempt to claim a task locally.
-    (when-let [task (swap! (:tasks vnode)
-                           (fn [tasks]
-                             (let [t (->> tasks
-                                          (remove task/claimed?)
-                                          first
-                                          task/claim)]
-                               (assoc tasks (:id t) t))))]
+    (when-let [task (locking (:tasks vnode)
+                      ; Pick an unclaimed task
+                      (when-let [unclaimed (->> vnode
+                                                tasks
+                                                (remove task/claimed?)
+                                                first)]
+                        (prn "Unclaimed task is" unclaimed)
+                        (let [claimed (task/claim unclaimed dt)]
+                          ; Record local claim
+                          (swap! (:tasks vnode) assoc (:id claimed) claimed)
+                          claimed)))]
+      (prn "Locally claimed task is" task)
+
       (let [; Get claim details
             i     (dec (count (:claims task)))
             claim (nth (:claims task) i)

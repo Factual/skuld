@@ -62,8 +62,6 @@
 (defn elect!
   "Force election of a leader in all vnodes."
   [nodes]
-  (locking *out*
-    (prn "ensuring leaders elected"))
   (loop [unelected (->> nodes
                         (map vnodes)
                         (mapcat vals)
@@ -79,8 +77,7 @@
         (doseq [vnodes unelected]
           (vnode/elect! (rand-nth vnodes)))
         (Thread/sleep 100)
-        (recur (remove partition-available? unelected))))
-  (prn "leader election complete"))
+        (recur (remove partition-available? unelected)))))
 
 (use-fixtures :once
               ; Start cluster
@@ -111,106 +108,106 @@
 
 ; (def byte-array-class ^:const (type (byte-array 0)))
 
-(deftest enqueue-test
-  ; Enqueue a task
-  (let [id (client/enqueue! *client* {:data "hi there"})]
-    (is id)
-    (is (instance? Bytes id))
+;(deftest enqueue-test
+;  ; Enqueue a task
+;  (let [id (client/enqueue! *client* {:data "hi there"})]
+;    (is id)
+;    (is (instance? Bytes id))
 
-    ; Read it back
-    (is (= (client/get-task *client* {:r 3} id)
-           {:id id
-            :claims []
-            :data "hi there"}))))
+;    ; Read it back
+;    (is (= (client/get-task *client* {:r 3} id)
+;           {:id id
+;            :claims []
+;            :data "hi there"}))))
 
-(deftest count-test
-  ; Enqueue a few tasks
-  (let [n 10]
-    (dotimes [i n]
-      (client/enqueue! *client* {:data "sup"}))
+;(deftest count-test
+;  ; Enqueue a few tasks
+;  (let [n 10]
+;    (dotimes [i n]
+;      (client/enqueue! *client* {:data "sup"}))
 
-    (is (= n (client/count-tasks *client*)))))
+;    (is (= n (client/count-tasks *client*)))))
 
-(deftest list-tasks-test
-  ; Enqueue
-  (let [n 10]
-    (dotimes [i n]
-      (client/enqueue! *client* {:data "sup"}))
+;(deftest list-tasks-test
+;  ; Enqueue
+;  (let [n 10]
+;    (dotimes [i n]
+;      (client/enqueue! *client* {:data "sup"}))
     
-    ; List
-    (let [tasks (client/list-tasks *client*)]
-      (is (= n (count tasks)))
-      (is (= (sort (map :id tasks)) (map :id tasks)))
-      (is (some :data tasks)))))
+;    ; List
+;    (let [tasks (client/list-tasks *client*)]
+;      (is (= n (count tasks)))
+;      (is (= (sort (map :id tasks)) (map :id tasks)))
+;      (is (some :data tasks)))))
 
-(defn test-election-consistent
-  "Asserts that the current state of the given vnodes is consistent, from a
-  leader-election perspective."
-  [vnodes]
-  ; Take a snapshot of the states (so we're operating on locally consistent
-  ; information
-  (let [states (->> vnodes
-                    (map vnode/state)
-                    (map (fn [vnode state]
-                           (assoc state :id (net/id (:net vnode))))
-                         vnodes)
-                    doall)
-        leaders (filter #(= :leader (:type %)) states)
-        true-leader (promise)]
+;(defn test-election-consistent
+;  "Asserts that the current state of the given vnodes is consistent, from a
+;  leader-election perspective."
+;  [vnodes]
+;  ; Take a snapshot of the states (so we're operating on locally consistent
+;  ; information
+;  (let [states (->> vnodes
+;                    (map vnode/state)
+;                    (map (fn [vnode state]
+;                           (assoc state :id (net/id (:net vnode))))
+;                         vnodes)
+;                    doall)
+;        leaders (filter #(= :leader (:type %)) states)
+;        true-leader (promise)]
 
-    ; Exactly one leader for each epoch
-    (doseq [[epoch leaders] (group-by :epoch leaders)]
-      (is (= 1 (count leaders))))
+;    ; Exactly one leader for each epoch
+;    (doseq [[epoch leaders] (group-by :epoch leaders)]
+;      (is (= 1 (count leaders))))
 
-    ; For all leaders
-    (doseq [leader leaders]
-      ; Find all nodes which this leader could write to
-      (let [cohort (->> states
-                        (filter #(and (= :follower (:type %))
-                                      (= (:epoch leader) (:epoch %))
-                                      (= (:cohort leader) (:cohort %)))))]
+;    ; For all leaders
+;    (doseq [leader leaders]
+;      ; Find all nodes which this leader could write to
+;      (let [cohort (->> states
+;                        (filter #(and (= :follower (:type %))
+;                                      (= (:epoch leader) (:epoch %))
+;                                      (= (:cohort leader) (:cohort %)))))]
 
-        ; There should be exactly one leader which could satisfy a quorum
-        (when (<= (majority (count (:cohort leader)))
-                  (count cohort))
-          (is (deliver true-leader leader)))))))
+;        ; There should be exactly one leader which could satisfy a quorum
+;        (when (<= (majority (count (:cohort leader)))
+;                  (count cohort))
+;          (is (deliver true-leader leader)))))))
 
-(deftest election-test
-  (let [part "skuld_0"
-        nodes (filter (fn [node]
-                        (when-let [v (vnode node part)]
-                          (vnode/active? v)))
-                      *nodes*)
-        vnodes (map #(vnode % part) nodes)]
+;(deftest election-test
+;  (let [part "skuld_0"
+;        nodes (filter (fn [node]
+;                        (when-let [v (vnode node part)]
+;                          (vnode/active? v)))
+;                      *nodes*)
+;        vnodes (map #(vnode % part) nodes)]
 
-    (testing "Initially"
-      (test-election-consistent vnodes))
+;    (testing "Initially"
+;      (test-election-consistent vnodes))
 
-    (testing "Stress"
-      (let [running (promise)]
-        ; Measure consistency continuously
-        (future
-          (while (deref running 1 true)
-            (test-election-consistent vnodes)))
+;    (testing "Stress"
+;      (let [running (promise)]
+;        ; Measure consistency continuously
+;        (future
+;          (while (deref running 1 true)
+;            (test-election-consistent vnodes)))
 
-        ; Initiate randomized elections
-        (->> vnodes
-             (map #(future
-                     (dotimes [i (rand-int 10)]
-                       (vnode/elect! %)
-                       (Thread/sleep (rand-int 10)))))
-             (map deref)
-             doall)
+;        ; Initiate randomized elections
+;        (->> vnodes
+;             (map #(future
+;                     (dotimes [i (rand-int 10)]
+;                       (vnode/elect! %)
+;                       (Thread/sleep (rand-int 10)))))
+;             (map deref)
+;             doall)
 
-        (deliver running false)
-        (test-election-consistent vnodes)))))
+;        (deliver running false)
+;        (test-election-consistent vnodes)))))
 
 (deftest ^:focus claim-test
   ; Enqueue
   (elect! *nodes*)
-  (prn (->> *nodes*
-            (map vnodes)
-            (mapcat vals)
-            (map (juxt vnode/net-id :partition vnode/leader?))))
-  (client/enqueue! *client* {:data "hi"}))
-;  (prn :client-got (client/claim! *client* {:timeout 50000} 1000)))
+  (Thread/sleep 50)
+  (let [id (client/enqueue! *client* {:data "hi"})]
+    ; Wait for enqueue to become visible (should add w-val)
+    (Thread/sleep 50)
+    (prn :task (client/get-task *client* {:r 3} id))
+    (prn :client-got (client/claim! *client* {:timeout 50000} 1000))))

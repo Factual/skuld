@@ -93,8 +93,8 @@
 (defn enqueue!
   "Proxies to enqueue-local on all nodes in the preflist for this task."
   [node msg]
-  (let [id (Bytes. (flake/id))
-        task (assoc (:task msg) :id id)]
+  (let [task (task/task (:data msg))
+        id (:id task)]
     (let [r (get msg :r 1)
           responses (net/sync-req! (:net node)
                                    (preflist node id)
@@ -240,33 +240,37 @@
 (defn claim-local!
   "Tries to claim a task from a local vnode."
   [node msg]
-;  (prn "claim-local: vnodes are" (->> node vnodes vals (map (juxt :partition vnode/state))))
-;  (prn "claim-local: leaders are" (->> node vnodes vals (filter vnode/leader?) (map :partition)))
-  (->> node
-       vnodes
-       vals
-       (filter vnode/leader?)
-       (some (fn [vnode]
-;               (prn "Trying claim-local! on vnode" (:partition vnode))
-               (try (vnode/claim! vnode (get msg :dt 10000))
-                    (catch Throwable t nil))))))
+  (prn "claim-local on" (net/id (:net node)))
+  (or (->> node
+           vnodes
+           vals
+           (filter vnode/leader?)
+           (some (fn [vnode]
+                   (prn "trying to claim on" (:partition vnode))
+                   (try 
+                     {:task (vnode/claim! vnode (get msg :dt 10000))}
+                     (catch Throwable t (.printStackTrace t) nil)))))
+      (do (prn "no leaders had tasks to claim") {})))
 
 (defn claim!
   "Tries to claim a task."
   [node msg]
   ; Try a local claim first
-  (or (claim-local! node msg)
+  (or (let [t (claim-local! node msg)]
+        (and (:task t) t))
       ; Ask each peer in turn for a task
-      (loop [peers (shuffle (peers node))]
-;        (prn "Asking" (first peers) "for claim")
-        (let [[response] (net/sync-req! (:net node) [(first peers)] {}
-                                        (assoc msg :type :claim-local))]
-;          (prn "response was" response)
-          (if (and (next peers)
-                   (or (nil? response)
-                       (:error response)))
-            (recur (next peers))
-            response)))))
+      (loop [[peer & peers] (shuffle (disj (set (peers node))
+                                           (net/id (:net node))))]
+        (if-not peer
+          {:error "no peers had any tasks to claim"}
+          (do
+            (prn "Asking" (first peers) "for claim")
+            (let [[response] (net/sync-req! (:net node) [peer] {}
+                                            (assoc msg :type :claim-local))]
+              (prn "response was" response)
+              (if (:task response)
+                response
+                (recur peers))))))))
 
 (defn request-claim!
   "Accepts a request from a leader to claim a given task."

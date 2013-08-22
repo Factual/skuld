@@ -33,7 +33,7 @@
 (defn task
   "Creates a new task around the given data payload."
   [data]
-  {:id     (flake/id)
+  {:id     (Bytes. (flake/id))
    :data   data
    :claims []})
 
@@ -61,17 +61,17 @@
   [task idx claim]
   (when-not task
     (throw (IllegalStateException. "task is nil")))
+
   (let [start (:start claim)]
     (if (some #(<= start (:end %)) (:claims task))
       (throw (IllegalStateException. "task already claimed"))
-      (assoc task :claims
-             (conj (:claims task) claim)))))
+      (assoc-in task [:claims idx] claim))))
 
 (defn claim
   "Returns a copy of a task claimed for dt milliseconds. (last (:claims task))
   will be the claim applied. Throws if the task is presently claimed."
   [task dt]
-  (request-claim task (new-claim dt)))
+  (request-claim task (count (:claims task)) (new-claim dt)))
 
 (defn merge-claims
   "Merges a collection of vectors of claims together."
