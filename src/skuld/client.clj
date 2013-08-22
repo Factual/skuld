@@ -30,9 +30,12 @@
 
 (defn enqueue!
   "Enqueue a single task. Returns a task ID."
-  [client task]
-  (:id (sync-req! client {} {:type :enqueue
-                             :task task})))
+  ([client task]
+   (enqueue! client {} task))
+  ([client opts task]
+    (:id (sync-req! client {} {:type :enqueue
+                               :w    (get opts :w 1)
+                               :task task}))))
 
 (defn claim!
   "Claim a task for dt milliseconds. Returns a task."

@@ -205,9 +205,7 @@
 (deftest ^:focus claim-test
   ; Enqueue
   (elect! *nodes*)
-  (Thread/sleep 50)
-  (let [id (client/enqueue! *client* {:data "hi"})]
+  (let [id (client/enqueue! *client* {:w 3} {:data "hi"})]
     ; Wait for enqueue to become visible (should add w-val)
-    (Thread/sleep 50)
-    (prn :task (client/get-task *client* {:r 3} id))
-    (prn :client-got (client/claim! *client* {:timeout 50000} 1000))))
+    (let [claimed (client/claim! *client* {:timeout 50000} 1000)]
+      (is (= id (:id claimed))))))

@@ -95,13 +95,15 @@
   [node msg]
   (let [task (task/task (:data msg))
         id (:id task)]
-    (let [r (get msg :r 1)
+    (prn "enqueue msg" msg)
+    (let [r (or (:w msg) 1)
           responses (net/sync-req! (:net node)
                                    (preflist node id)
                                    {:r r}
                                    {:type    :enqueue-local
                                     :task    task})
           acks (remove :error responses)]
+      (prn "Got" (count acks) "/" r "acks for write")
       (if (<= r (count acks))
         {:n         (count acks)
          :id        id}
