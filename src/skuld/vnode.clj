@@ -402,7 +402,6 @@
   "Picks a task from this vnode and claims it for dt milliseconds. Returns the
   claimed task."
   [vnode dt]
-  ; Compute leader state
   (let [state     (state vnode)
         epoch     (:epoch state)
         cohort    (:cohort state)
@@ -417,7 +416,7 @@
       (throw (IllegalStateException. "can't initiate claim: not a leader.")))
 
     ; Attempt to claim a task locally.
-    (when-let [task (locking (:tasks vnode)
+    (when-let [task (locking vnode
                       ; Pick an unclaimed task
                       (when-let [unclaimed (->> vnode
                                                 tasks

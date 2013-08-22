@@ -10,6 +10,7 @@
             [skuld.flake   :as flake]
             [skuld.curator :as curator]
             [skuld.net     :as net]
+            [skuld.task    :as task]
             [clojure.set   :as set]
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
@@ -207,5 +208,6 @@
   (elect! *nodes*)
   (let [id (client/enqueue! *client* {:w 3} {:data "hi"})]
     ; Wait for enqueue to become visible (should add w-val)
-    (let [claimed (client/claim! *client* {:timeout 50000} 1000)]
-      (is (= id (:id claimed))))))
+    (let [task (client/claim! *client* {:timeout 50000} 1000)]
+      (is (= id (:id task)))
+      (is (task/claimed? task)))))
