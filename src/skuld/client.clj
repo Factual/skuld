@@ -20,10 +20,13 @@
 
 (defn sync-req!
   [client opts msg]
-  (-> client
-      :net
-      (net/sync-req! (list (peer client)) opts msg)
-      first))
+  (let [res (-> client
+                :net
+                (net/sync-req! (list (peer client)) opts msg)
+                first)]
+    (when-let [error (:error res)]
+      (throw (RuntimeException. error)))
+    res))
 
 (defn wipe! [client]
   (sync-req! client {} {:type :wipe}))

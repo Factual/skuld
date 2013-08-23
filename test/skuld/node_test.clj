@@ -203,11 +203,48 @@
 ;        (deliver running false)
 ;        (test-election-consistent vnodes)))))
 
-(deftest ^:focus claim-test
-  ; Enqueue
+;(deftest claim-test
+;  (elect! *nodes*)
+;  (let [id (client/enqueue! *client* {:w 3} {:data "hi"})]
+;    (let [task (client/claim! *client* {:timeout 5000} 1000)]
+;      (is (= id (:id task)))
+;      (is (task/claimed? task)))))
+
+(deftest claim-stress-test
+  (Thread/sleep 2000)
   (elect! *nodes*)
-  (let [id (client/enqueue! *client* {:w 3} {:data "hi"})]
-    ; Wait for enqueue to become visible (should add w-val)
-    (let [task (client/claim! *client* {:timeout 50000} 1000)]
-      (is (= id (:id task)))
-      (is (task/claimed? task)))))
+  (println "cohorts are\n" (->> *nodes*
+                                (map vnodes)
+                                (mapcat vals)
+                                (filter vnode/leader?)
+                                (map (juxt (comp :port vnode/net-id)
+                                           :partition
+                                           vnode/epoch
+                                           (comp (partial map :port)
+                                                 :cohort vnode/state)))
+                                (map pr-str)
+                                (interpose "\n")
+                                (apply str)))
+
+  (let [ids (->> (repeatedly
+                   #(client/enqueue! *client* {:w 3} {:data "sup"}))
+                 (take 10)
+                 doall)
+        _ (prn "IDs are" ids)
+        _ (assert (= 10 (client/count-tasks *client*)))
+        ; Claim all extant IDs
+        claims (loop [claims {}]
+                 (if-let [t (client/claim! *client* 10000)]
+                   (do
+                     ; Make sure we never double-claim
+                     (assert (not (get claims (:id t))))
+                     (let [claims (assoc claims (:id t) t)]
+                       (if (= (count ids) (count claims))
+                         claims
+                         (recur claims))))
+                   ; Out of claims?
+                   (do
+                     (prn "out of claims")
+                     claims)))]
+    (is (= (count ids) (count claims)))
+    (is (= (set (keys claims)) (set ids)))))

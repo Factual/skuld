@@ -382,6 +382,7 @@
   ... and applies the given claim to our copy of that task. Returns an empty
   map if the claim is successful, or {:error ...} if the claim failed."
   [vnode {:keys [id i claim] :as msg}]
+  (locking *out* (prn "receiving request for claim" msg))
 ;  (accept-newer-epoch! msg) todo: test this
   (try
     (locking vnode
@@ -403,7 +404,7 @@
   claimed task."
   [vnode dt]
   (let [state     (state vnode)
-        epoch     (:epoch state)
+        cur-epoch (:epoch state)
         cohort    (:cohort state)
         ; How many followers need to ack us?
         maj       (-> cohort
@@ -417,6 +418,8 @@
 
     ; Attempt to claim a task locally.
     (when-let [task (locking vnode
+                      (prn "unclaimed tasks:" (->> vnode tasks (remove task/claimed?)))
+
                       ; Pick an unclaimed task
                       (when-let [unclaimed (->> vnode
                                                 tasks
@@ -436,11 +439,21 @@
                                      (disj cohort (net-id vnode))
                                      {:r maj}
                                      {:type   :request-claim
-                                      :epoch  epoch
+                                      :epoch  cur-epoch
                                       :id     (:id task)
                                       :i      i
                                       :claim  claim})
             successes (count (remove :error responses))]
+      
+        ; Check that we're still in the same epoch; a leader could
+        ; have subsumed us.
+        (when (not= cur-epoch (epoch vnode))
+          (throw (RuntimeException. (str "epoch changed from "
+                                         cur-epoch
+                                         " to "
+                                         (epoch vnode)
+                                         ", claim coordinator aborting"))))
+    
     (if (<= maj successes)
       task
       (throw (RuntimeException. (str "needed " maj

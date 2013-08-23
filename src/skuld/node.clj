@@ -95,6 +95,7 @@
   [node msg]
   (let [task (task/task (:data msg))
         id (:id task)]
+    (prn "preflist is" (map :port (preflist node id)))
     (let [r (or (:w msg) 1)
           responses (net/sync-req! (:net node)
                                    (preflist node id)
