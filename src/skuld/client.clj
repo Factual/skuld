@@ -25,7 +25,7 @@
                 (net/sync-req! (list (peer client)) opts msg)
                 first)]
     (when-let [error (:error res)]
-      (throw (RuntimeException. error)))
+      (throw (RuntimeException. ^String error)))
     res))
 
 (defn wipe! [client]
