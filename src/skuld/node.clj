@@ -95,7 +95,7 @@
 (defn enqueue!
   "Proxies to enqueue-local on all nodes in the preflist for this task."
   [node msg]
-  (let [task (task/task (:data msg))
+  (let [task (task/task (:task msg))
         id (:id task)]
     (let [r (or (:w msg) 1)
           preflist (preflist node id)

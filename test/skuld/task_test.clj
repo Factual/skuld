@@ -30,11 +30,11 @@
            {:claims []})))
 
   (testing "one"
-    (let [t (task :hi)]
+    (let [t (task {:data :hi})]
       (is (= (merge t) t))))
 
   (testing "more"
-    (let [t (task :hi)]
+    (let [t (task {:data :hi})]
       (is (= (merge (assoc t :claims [{:start 0 :end 1}])
                     (assoc t :claims [nil nil {:start 2 :end 4}]))
              (assoc t :claims [{:start 0 :end 1}
@@ -42,10 +42,10 @@
                                 {:start 2 :end 4}]))))))
 
 (deftest claim-test
-  (let [t (claim (task :hi) 10)]
+  (let [t (claim (task {:data :hi}) 10)]
     (is (claimed? t)))
 
   (with-redefs [clock-skew-buffer 0]
-    (let [t (claim (task :hi) 0)]
+    (let [t (claim (task {:data :hi}) 0)]
       (Thread/sleep 1)
       (is (not (claimed? t))))))

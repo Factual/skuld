@@ -31,11 +31,11 @@
   (* 1000 60 60))
 
 (defn task
-  "Creates a new task around the given data payload."
-  [data]
-  {:id     (Bytes. (flake/id))
-   :data   data
-   :claims []})
+  "Creates a new task around the given map."
+  [task]
+  (merge task
+         {:id     (or (:id task) (Bytes. (flake/id)))
+          :claims []}))
 
 (defn new-claim
   "Creates a new claim, valid for dt milliseconds."
