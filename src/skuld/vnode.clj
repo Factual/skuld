@@ -382,8 +382,7 @@
   ... and applies the given claim to our copy of that task. Returns an empty
   map if the claim is successful, or {:error ...} if the claim failed."
   [vnode {:keys [id i claim] :as msg}]
-  (locking *out* (prn "receiving request for claim" msg))
-;  (accept-newer-epoch! msg) todo: test this
+  (accept-newer-epoch! vnode msg)
   (try
     (locking vnode
       (assert (not (zombie? vnode)))
@@ -418,7 +417,6 @@
 
     ; Attempt to claim a task locally.
     (when-let [task (locking vnode
-                      (prn "unclaimed tasks:" (->> vnode tasks (remove task/claimed?)))
 
                       ; Pick an unclaimed task
                       (when-let [unclaimed (->> vnode

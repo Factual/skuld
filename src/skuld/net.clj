@@ -54,7 +54,7 @@
 (declare handle-response!)
 
 (defonce event-executor
-  (DefaultEventExecutorGroup. 16))
+  (DefaultEventExecutorGroup. 32))
 
 (defn protobuf-varint32-frame-decoder []
   (ProtobufVarint32FrameDecoder.))

@@ -210,9 +210,8 @@
 ;      (is (= id (:id task)))
 ;      (is (task/claimed? task)))))
 
-(deftest claim-stress-test
-  (Thread/sleep 2000)
-  (elect! *nodes*)
+(defn log-cohorts
+  []
   (println "cohorts are\n" (->> *nodes*
                                 (map vnodes)
                                 (mapcat vals)
@@ -224,27 +223,44 @@
                                                  :cohort vnode/state)))
                                 (map pr-str)
                                 (interpose "\n")
-                                (apply str)))
+                                (apply str))))
 
-  (let [ids (->> (repeatedly
-                   #(client/enqueue! *client* {:w 3} {:data "sup"}))
-                 (take 10)
-                 doall)
-        _ (prn "IDs are" ids)
-        _ (assert (= 10 (client/count-tasks *client*)))
-        ; Claim all extant IDs
-        claims (loop [claims {}]
-                 (if-let [t (client/claim! *client* 10000)]
-                   (do
-                     ; Make sure we never double-claim
-                     (assert (not (get claims (:id t))))
-                     (let [claims (assoc claims (:id t) t)]
-                       (if (= (count ids) (count claims))
-                         claims
-                         (recur claims))))
-                   ; Out of claims?
-                   (do
-                     (prn "out of claims")
-                     claims)))]
+(defn log-counts
+  []
+  (->> *nodes*
+       (mapcat (fn [node]
+                 (->> node
+                      vnodes
+                      (map (fn [[part vnode]]
+                             [(:port (net/id (:net node)))
+                              part
+                              (vnode/leader? vnode)
+                              (vnode/count-tasks vnode)])))))
+       (clojure.pprint/pprint)))
+
+(deftest claim-stress-test
+  (elect! *nodes*)
+
+  (let [n 100
+        ids (->> (repeatedly (fn []
+                               (client/enqueue! *client* {:w 3} {:data "sup"})))
+                 (take n)
+                 doall)]
+
+    (is (not-any? nil? ids))
+    (is (= n (client/count-tasks *client*)))
+    ; Claim all extant IDs
+    (let [claims (loop [claims {}]
+                   (if-let [t (client/claim! *client* 100000)]
+                     (do
+                       ; Make sure we never double-claim
+                       (assert (not (get claims (:id t))))
+                       (let [claims (assoc claims (:id t) t)]
+                         (if (= (count ids) (count claims))
+                           claims
+                           (recur claims))))
+                     ; Out of claims?
+                     (do
+                       claims)))]
     (is (= (count ids) (count claims)))
-    (is (= (set (keys claims)) (set ids)))))
+    (is (= (set (keys claims)) (set ids))))))

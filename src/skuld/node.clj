@@ -80,9 +80,11 @@
 (defn peers
   "All peers which own a partition, or all peers in the cluster."
   ([node]
-   (route/instances (:router node) :skuld :peer))
+   (map #(select-keys % [:host :port])
+        (route/instances (:router node) :skuld :peer)))
   ([node part]
-   (route/instances (:router node) :skuld part :peer)))
+   (map #(select-keys % [:host :port])
+        (route/instances (:router node) :skuld part :peer))))
 
 (defn preflist
   "Returns a set of nodes responsible for a Bytes id."
@@ -95,10 +97,10 @@
   [node msg]
   (let [task (task/task (:data msg))
         id (:id task)]
-    (prn "preflist is" (map :port (preflist node id)))
     (let [r (or (:w msg) 1)
+          preflist (preflist node id)
           responses (net/sync-req! (:net node)
-                                   (preflist node id)
+                                   preflist
                                    {:r r}
                                    {:type    :enqueue-local
                                     :task    task})
@@ -108,7 +110,7 @@
          :id        id}
         {:n         (count acks)
          :id        id
-         :error     (str "not enough acks")
+         :error     (str "not enough acks from " (prn-str preflist))
          :responses responses}))))
 
 (defn enqueue-local!
@@ -241,15 +243,15 @@
 (defn claim-local!
   "Tries to claim a task from a local vnode."
   [node msg]
-  (or (->> node
-           vnodes
-           vals
-           (filter vnode/leader?)
-           (some (fn [vnode]
-                   (try 
-                     {:task (vnode/claim! vnode (get msg :dt 10000))}
-                     (catch Throwable t (.printStackTrace t) nil)))))
-      {}))
+  {:task
+   (->> node
+        vnodes
+        vals
+        (filter vnode/leader?)
+        (some (fn [vnode]
+                (try 
+                  (vnode/claim! vnode (get msg :dt 10000))
+                  (catch Throwable t (.printStackTrace t) nil)))))})
 
 (defn claim!
   "Tries to claim a task."
@@ -261,7 +263,8 @@
       (loop [[peer & peers] (shuffle (disj (set (peers node))
                                            (net/id (:net node))))]
         (if-not peer
-          {:error "no peers had any tasks to claim"}
+          ; Done
+          {}
           (do
             (let [[response] (net/sync-req! (:net node) [peer] {}
                                             (assoc msg :type :claim-local))]
