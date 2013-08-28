@@ -41,3 +41,5 @@
         (is (= id (:id t)))
         (is (= 2 (count (:claims t))))
         (is (= "maus" (:data t)))))))
+
+(deftest complete-test)
