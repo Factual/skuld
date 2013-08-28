@@ -9,6 +9,12 @@
             [clojure.set :as set])
   (:import com.aphyr.skuld.Bytes))
 
+; DEAL WITH IT
+(in-ns 'skuld.aae)
+(clojure.core/declare sync-from!)
+(clojure.core/declare sync-to!)
+(in-ns 'skuld.vnode)
+
 (defn vnode
   "Create a new vnode. Options:
   
@@ -34,8 +40,8 @@
 (defmacro llog
   "Log leader election messages"
   [& args])
-;  (locking *out*
-;    (apply prn args)))
+;  `(locking *out*
+;    (prn ~@args)))
 
 (defn peers
   "Peers for this vnode."
@@ -183,6 +189,21 @@
          (<= (majority-excluding-self vnode new-cohort)
              (count (set/intersection new-cohort votes))))))
 
+(defn sync-with-majority!
+  "Tries to copy tasks to or from a majority of the given cohort, using
+  sync-fn. Returns true if successful."
+  [vnode cohort sync-fn]
+  (not (pos? (loop [remaining (majority-excluding-self vnode cohort)
+                    [node & more] (seq (disj cohort (net-id vnode)))]
+               (if-not (and node (< 0 remaining))
+                 ; Done
+                 remaining
+                 ; Copy data from another node and repeat
+                 (recur (if (sync-fn vnode node)
+                          (dec remaining)
+                          remaining)
+                        more))))))
+
 (defn elect!
   "Attempt to become a primary. We need to ensure that:
 
@@ -295,34 +316,46 @@
                               (llog "All votes in; giving up.")))))))
 
           ; Await responses
-          (if (deref accepted? 5000 false)
-            ; Todo: sync claim set from old cohort
-
-            ; Update ZK with new cohort and epoch--but only if nobody else
-            ; got there first.
-            (let [new-leader {:epoch epoch
-                              :cohort new-cohort}
-                  set-leader (curator/swap!! (zk-leader vnode)
-                                             (fn [current]
-                                               (if (= old current)
-                                                 new-leader
-                                                 current)))]
-              (if (= new-leader set-leader)
-                ; Success!
-                (let [state (swap! (:state vnode)
-                                   (fn [state]
-                                     (if (= epoch (:epoch state))
-                                       ; Still waiting for responses
-                                       (assoc state :type :leader)
-                                       ; We voted for someone else in the
-                                       ; meantime
-                                       state)))]
-                  (llog (net-id vnode) (:partition vnode)
-                        "election successful: cohort now" epoch new-cohort))
-                (llog (net-id vnode) (:partition vnode)
-                      "election failed: another leader updated zk")))
+          (if-not (deref accepted? 5000 false)
             (llog (net-id vnode) (:partition vnode)
-                  "election failed; not enough votes")))))))
+                  "election failed; not enough votes")
+
+            ; Sync from old cohort.
+            (if-not (sync-with-majority! vnode
+                                         old-cohort
+                                         skuld.aae/sync-from!)
+              (llog "Wasn't able to replicate from enough of old cohort; cannot become leader.")
+
+              ; Sync to new cohort.
+              (if-not (sync-with-majority! vnode
+                                           new-cohort
+                                           skuld.aae/sync-to!)
+                (prn "Wasn't able to replicate to enough of new cohort; cannot become leader.") 
+
+                ; Update ZK with new cohort and epoch--but only if nobody else
+                ; got there first.
+                (let [new-leader {:epoch epoch
+                                  :cohort new-cohort}
+                      set-leader (curator/swap!! (zk-leader vnode)
+                                                 (fn [current]
+                                                   (if (= old current)
+                                                     new-leader
+                                                     current)))]
+                  (if (not= new-leader set-leader)
+                    (llog (net-id vnode) (:partition vnode)
+                          "election failed: another leader updated zk")
+
+                    ; Success!
+                    (let [state (swap! (:state vnode)
+                                       (fn [state]
+                                         (if (= epoch (:epoch state))
+                                           ; Still waiting for responses
+                                           (assoc state :type :leader)
+                                           ; We voted for someone else in the
+                                           ; meantime
+                                           state)))]
+                      (llog (net-id vnode) (:partition vnode)
+                            "election successful: cohort now" epoch new-cohort))))))))))))
 
 ;; Tasks
 

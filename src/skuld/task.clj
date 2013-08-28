@@ -33,9 +33,9 @@
 (defn task
   "Creates a new task around the given map."
   [task]
-  (merge task
-         {:id     (or (:id task) (Bytes. (flake/id)))
-          :claims []}))
+  (clojure.core/merge task
+                      {:id     (or (:id task) (Bytes. (flake/id)))
+                       :claims []}))
 
 (defn new-claim
   "Creates a new claim, valid for dt milliseconds."

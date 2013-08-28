@@ -347,7 +347,10 @@
 
     ; Send messages
     (doseq [peer peers]
-      (send! node peer msg))))
+      (try
+        (send! node peer msg)
+        (catch io.netty.channel.ChannelException e
+          (handle-response! (:requests node) id nil))))))
 
 (defmacro req!
   "Like request!, but with the body captured into the callback function.

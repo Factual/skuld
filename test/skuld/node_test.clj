@@ -11,6 +11,7 @@
             [skuld.curator :as curator]
             [skuld.net     :as net]
             [skuld.task    :as task]
+            [skuld.aae     :as aae]
             [clojure.set   :as set]
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
@@ -73,7 +74,9 @@
       (when-not (empty? unelected)
         (locking *out*
           (prn (count unelected) "unelected partitions"))
-;          (prn (map (partial map (juxt vnode/net-id :partition vnode/state))
+;          (prn (map (partial map (juxt (comp :port vnode/net-id)
+;                                       :partition
+;                                       vnode/state))
 ;                    unelected)))
         (doseq [vnodes unelected]
           (vnode/elect! (rand-nth vnodes)))
@@ -265,3 +268,57 @@
                        claims)))]
     (is (= (count ids) (count claims)))
     (is (= (set (keys claims)) (set ids))))))
+
+(deftest election-handoff-test
+  ; Shut down normal AAE initiators; we don't want them recovering data behind
+  ; our backs. ;-)
+  (dorun (pmap (comp aae/shutdown! :aae) *nodes*))
+
+  ; Enqueue something and claim it.
+  (elect! *nodes*)
+  (let [id (client/enqueue! *client* {:w 3} {:data "meow"})
+        claim (client/claim! *client* 100000)]
+    (is (= id (:id claim)))
+
+    ; Now kill 2 of the nodes which own that id, leaving one copy
+    (let [originals (filter (fn [node]
+                              (->> node
+                                   vnodes
+                                   vals
+                                   (mapcat vnode/tasks)
+                                   (map :id)
+                                   (some #{id})))
+                            *nodes*)
+          fallbacks (remove (set originals) *nodes*)
+          [dead alive] (split-at 1 originals)
+          _ (is (= 2 (count alive)))
+          replacements (concat alive fallbacks)]
+
+      ; Shut down 2/3 nodes
+      (dorun (pmap shutdown! dead))
+     
+      ; At this point, only 2 nodes should have the claim
+;      (->> replacements
+;           (map vnodes)
+;           (map vals)
+;           (map (partial mapcat vnode/tasks))
+;           clojure.pprint/pprint)
+
+      ; Wait for the preflist to converge on the replacement cohort
+      (while (not (and (= 3 (count (preflist (first alive) id)))
+                       (set/subset?
+                         (set (preflist (first alive) id))
+                         (set (map (comp net/id :net) replacements)))))
+        (Thread/sleep 1000))
+
+      ; Elect a new cohort
+      (elect! replacements)
+
+      ; Verify that we cannot re-claim the element.
+      (is (<= 2 (->> replacements
+                     (map vnodes)
+                     (map vals)
+                     (map (partial mapcat vnode/tasks))
+                     (map (partial some #(= id (:id %))))
+                     (filter true?)
+                     count)))))) 

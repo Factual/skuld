@@ -12,61 +12,128 @@
   [vnode]
   (merkle/tree @(:tasks vnode)))
 
+(defn merge-updates!
+  "Merges :updates from a message into the given vnode. Returns true if
+  messages merged, nil otherwise."
+  [vnode message]
+  (when message
+    (dorun (map (partial vnode/merge-task! vnode) (:updates message)))
+    true))
+
+(defn vnode
+  "Gets the local vnode for an AAE message."
+  [vnodes msg]
+  (let [part (:partition msg)]
+    (or (get @vnodes part)
+        (throw (RuntimeException. "no such vnode" part)))))
+
+(defn handle-tree
+  "Returns the local {:tree ...} for a requested vnode."
+  [vnodes msg]
+  (let [vnode (vnode vnodes msg)]
+    {:tree (merkle/node->map (merkle-tree vnode))}))
+
+(defn handle-diff
+  "Given a message with a requester's tree, computes diff and returns {:updates
+  ...} for requester."
+  [vnodes msg]
+  (let [vnode (vnode vnodes msg)
+        ; Diff against our local collection.
+        remote-tree (merkle/map->node (:tree msg))
+        diffs (merkle/diff @(:tasks vnode)
+                           (merkle-tree vnode)
+                           remote-tree)]
+    {:updates (vals diffs)}))
+
+(defn handle-updates!
+  "Given {:updates ...} from requester, applies them to local vnode and returns
+  {}."
+  [vnodes msg]
+  (or
+    (and (merge-updates! (vnode vnodes msg) msg)
+         {})
+    (throw (RuntimeException. "expected a :updates key."))))
+
 (defn handler
   "Returns a handler function that checks AAE messages against an atom wrapping
   a map of partitions to vnodes."
   [vnodes]
   (fn [msg]
-    (when (= :aae (:type msg))
-      (let [part (:part msg)]
-        (when-let [vnode (get @vnodes part)]
-          ; Diff against our local collection.
-          (let [remote-tree (merkle/map->node (:tree msg))]
-            (let [diffs (merkle/diff @(:tasks vnode)
-                                     (merkle-tree vnode)
-                                     remote-tree)]
-              {:updates (vals diffs)})))))))
+    (case (:type msg)
+      :aae-tree    (handle-tree     vnodes msg)
+      :aae-diff    (handle-diff     vnodes msg)
+      :aae-updates (handle-updates! vnodes msg)
+      nil)))
+
+(defn sync-from!
+  "Fills in the local vnode with tasks from the remote peer. If the remote peer
+  is immutable, this means the local node will have a complete copy of the
+  remote's data. Returns true if vnode copied; false otherwise."
+  [vnode peer]
+  (let [tree (-> vnode
+              merkle-tree)
+        tree (merkle/node->map tree)
+        [res] (net/sync-req! (:net vnode) [peer] {}
+                            {:type :aae-diff
+                             :partition (:partition vnode)
+                             :tree tree})]
+    (merge-updates! vnode res)))
+
+(defn sync-to!
+  "Pushes data from a local vnode to the remote peer. If the local vnode is
+  immutable, this means the remote peer will have a complete copy of the
+  vnode's data. Returns true if vnode copied; false otherwise."
+  [vnode peer]
+  ; Get remote tree
+  (when-let [response (-> vnode
+                          :net
+                          (net/sync-req! 
+                            [peer]
+                            {}
+                            {:type :aae-tree
+                             :partition (:partition vnode)})
+                          first)]
+                             
+    ; Compute diffs
+    (let [remote-tree (merkle/map->node (:tree response))
+          updates (merkle/diff @(:tasks vnode)
+                               (merkle-tree vnode)
+                               remote-tree)]
+
+      ; Send updates
+      (when-not (:error (net/sync-req! (:net vnode)
+                                       [peer]
+                                       {}
+                                       {:type :aae-updates
+                                        :partition (:partition vnode)
+                                        :updates updates}))
+        true))))
 
 (defn sync-vnode!
-  "Given a vnode, hashes it and initiates a sync with peers."
+  "Given a vnode, hashes it and syncs with peers."
   [net router vnode]
-  ; Compute tree
-  (let [t (-> vnode
-              merkle-tree
-              merkle/node->map)
-        self (select-keys net [:host :port])
-        peers (->> (route/instances router :skuld (:partition vnode) :peer)
-                   (remove #(= self (select-keys % [:host :port]))))]
-
-    ; Broadcast tree to peers
-    (doseq [peer peers]
-      (net/req! net [peer] {}
-                {:type :aae
-                 :part (:partition vnode)
-                 :tree t}
-                [[response]]
-                ; And if we get responses, merge em.
-                (when-let [updates (:updates response)]
-                  (dorun (map (partial vnode/merge-task! vnode) updates)))))))
+  (let [self (vnode/net-id vnode)
+        peers (set (vnode/peers vnode))]
+    (dorun (map (partial sync-from! vnode) (disj peers self)))))
 
 (defn initiator
   "Periodically initiates sync with peers."
   [net router vnodes]
   (let [running (promise)]
     (future
-      (Thread/sleep 10000)
-      (loop []
-        (try
-          (->> vnodes
-               deref
-               vals
-               (map (partial sync-vnode! net router))
-               dorun)
-          (catch Throwable t
-            (warn t "aae caught")))
+      (when (deref running 10000 true)
+        (loop []
+          (try
+            (->> vnodes
+                 deref
+                 vals
+                 (map (partial sync-vnode! net router))
+                 dorun)
+            (catch Throwable t
+              (warn t "aae caught")))
 
-        (when (deref running 10000 true)
-          (recur))))
+          (when (deref running 10000 true)
+            (recur)))))
     running))
 
 (defn service
