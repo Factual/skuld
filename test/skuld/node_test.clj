@@ -83,32 +83,26 @@
         (Thread/sleep 100)
         (recur (remove partition-available? unelected)))))
 
-(use-fixtures :once
-              ; Start cluster
-              (fn [f] (mute (ensure-cluster!) (f)))
+(defn once
+  [f]
+  (mute (ensure-cluster!))
+  (mute (binding [*nodes* (start-nodes!)]
+          (try
+            (binding [*client* (client/client *nodes*)]
+              (try
+                (f)
+                (finally
+                  (client/shutdown! *client*))))
+            (finally
+              (shutdown-nodes! *nodes*))))))
 
-              ; Start nodes
-              (fn [f]
-                (mute
-                  (binding [*nodes* (start-nodes!)]
-                    (try
-                      (f)
-                      (finally
-                        (shutdown-nodes! *nodes*))))))
+(defn each
+  [f]
+  (client/wipe! *client*)
+  (f))
 
-              ; Start client
-              (fn [f]
-                (binding [*client* (client/client *nodes*)]
-                  (try
-                    (f)
-                    (finally
-                      (client/shutdown! *client*))))))
-
-(use-fixtures :each
-              ; Wipe cluster
-              (fn [f]
-                (client/wipe! *client*)
-                (f)))
+(use-fixtures :once once)
+(use-fixtures :each each)
 
 ; (def byte-array-class ^:const (type (byte-array 0)))
 
