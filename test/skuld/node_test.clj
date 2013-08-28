@@ -321,4 +321,6 @@
                      (map (partial mapcat vnode/tasks))
                      (map (partial some #(= id (:id %))))
                      (filter true?)
-                     count)))))) 
+                     count)))
+
+      (is (not (client/claim! *client* 1000))))))
