@@ -250,7 +250,7 @@
         (filter vnode/leader?)
         (some (fn [vnode]
                 (try 
-                  (vnode/claim! vnode (get msg :dt 10000))
+                  (vnode/claim! vnode (or (:dt msg) 10000))
                   (catch Throwable t nil)))))})
 
 (defn claim!
@@ -295,7 +295,7 @@
   "Completes a given task in a given run. Proxies to all nodes owning that
   task."
   [node msg]
-  (let [w (get msg :w 2)
+  (let [w (or (:w msg) 2)
         responses (net/sync-req! (:net node)
                                  (preflist node (:task-id msg))
                                  {:r w}
