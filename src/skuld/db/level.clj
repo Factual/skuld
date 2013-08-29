@@ -1,18 +1,10 @@
-(ns skuld.level
+(ns skuld.db.level
   (:import (java.io Closeable)
            (com.aphyr.skuld Bytes))
   (:require [clj-leveldb :as level]
             [taoensso.nippy :as nippy]
-            [skuld.task :as task]))
-
-(defprotocol DB
-  (ids [db])
-  (tasks [db])
-  (count-tasks [db])
-  (get-task    [db ^Bytes id])
-  (merge-task! [db task])
-  (close! [db])
-  (wipe! [db]))
+            [skuld.task :as task])
+  (:use skuld.db))
 
 (defrecord Level [level count-cache]
   DB
@@ -26,7 +18,7 @@
     @count-cache)
 
   (get-task [db task-id]
-    (level/get level (.bytes task-id)))
+    (level/get level (.bytes ^Bytes task-id)))
 
   (merge-task! [db task]
     (when-not
@@ -57,11 +49,7 @@
   :partition
   :data-dir"
   [opts]
-  (let [level (level/create-db (or (:data-dir opts)
-                                   (str "skuld-"
-                                        (:host opts) ":" (:port opts) "-"
-                                        (:partition opts)
-                                        ".level"))
+  (let [level (level/create-db (path (assoc opts :ext "level"))
                                :val-decoder #(and % (nippy/thaw %))
                                :val-encoder #(and % (nippy/freeze %)))
         c (count (level/iterator level))]

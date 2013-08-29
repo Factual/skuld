@@ -3,6 +3,8 @@
   (:use skuld.util
         clojure.tools.logging)
   (:require [skuld.task :as task]
+            [skuld.db :as db]
+            [skuld.db.level :as level]
             [skuld.net  :as net]
             [skuld.curator :as curator]
             [clj-helix.route :as route]
@@ -24,6 +26,9 @@
   {:partition (:partition opts)
    :net       (:net opts)
    :router    (:router opts)
+   :db        (level/open {:partition (:partition opts)
+                           :host      (:host (:net opts))
+                           :port      (:port (:net opts))})
    :zk-leader (delay
                 (curator/distributed-atom (:curator opts)
                                           (str "/" (:partition opts)

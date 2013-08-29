@@ -1,5 +1,6 @@
-(ns skuld.level-test
-  (:use skuld.level
+(ns skuld.db.level-test
+  (:use skuld.db.level
+        skuld.db
         clojure.test)
   (:require [skuld.flake :as flake]
             [skuld.task :as task]))
