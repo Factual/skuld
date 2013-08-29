@@ -402,6 +402,7 @@
   [vnode]
   (->> vnode
        tasks
+       (remove task/completed?)
        (remove task/claimed?)))
 
 (defn request-claim!
@@ -490,10 +491,21 @@
       (throw (RuntimeException. (str "needed " maj
                                      " acks from followers, only received "
                                      successes))))))))
-                            
+
+(defn complete!
+  "Completes the given task in the specified claim. Msg should contain:
+  
+  :task-id  The task identifier
+  :claim-id The claim index
+  :time     The time the task was completed at, in linear time."
+  [vnode msg]
+  (merge-task! vnode
+               (-> vnode
+                   (get-task (:task-id msg))
+                   (task/complete (:claim-id msg) (:time msg)))))
+
 (defn wipe!
   "Wipe a vnode's data clean."
   [vnode]
   (reset! (:tasks vnode) (sorted-map))
   vnode)
-

@@ -48,6 +48,14 @@
    (:task (sync-req! client opts {:type :claim
                                   :dt   dt}))))
 
+(defn complete!
+  "Complete a task with the given task ID and claim ID."
+  ([client task-id claim-id]
+   (:w (sync-req! client {} {:type :complete
+                             :w       (:w opts)
+                             :task-id task-id
+                             :claim-id claim-id}))))
+
 (defn get-task
   "Gets a task by ID."
   ([client task-id]

@@ -42,4 +42,20 @@
         (is (= 2 (count (:claims t))))
         (is (= "maus" (:data t)))))))
 
-(deftest complete-test)
+(deftest complete-test
+  (with-redefs [task/clock-skew-buffer 0]
+    (elect! *nodes*)
+    (let [id (client/enqueue! *client* {:data "sup"})]
+      (is (client/claim! *client* 1))
+
+      ; Isn't completed
+      (is (not (task/completed? (client/get-task *client* id))))
+
+      (client/complete! *client* id 0)
+
+      ; Is completed
+      (is (task/completed? (client/get-task *client* id)))
+
+      ; Can't re-claim.
+      (Thread/sleep 2)
+      (is (nil? (client/claim! *client* 100))))))

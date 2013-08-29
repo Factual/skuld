@@ -322,7 +322,7 @@
   (Request. (:debug opts)
             (flake/id)
             (+ (flake/linear-time) (get opts :timeout 5000))
-            (get opts :r 1)
+            (or (:r opts) 1)
             (atom (list))
             (:f opts)))
 
@@ -338,7 +338,8 @@
   [node peers opts msg]
   (assert (started? node))
   (let [r   (majority (count peers))
-        req (new-request (assoc opts :r (get opts :r (majority (count peers)))))
+        req (new-request (assoc opts :r (or (:r opts)
+                                            (majority (count peers)))))
         id  (.id req)
         msg (assoc msg :request-id id)]
 

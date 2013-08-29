@@ -127,7 +127,7 @@
   "Gets the current state of a task."
   [node msg]
   (let [id (:id msg)
-        r (get msg :r 1)
+        r  (or (:r msg) 2)
         responses (net/sync-req! (:net node)
                                  (preflist node id)
                                  {:r r}
@@ -251,7 +251,7 @@
         (some (fn [vnode]
                 (try 
                   (vnode/claim! vnode (get msg :dt 10000))
-                  (catch Throwable t (.printStackTrace t) nil)))))})
+                  (catch Throwable t nil)))))})
 
 (defn claim!
   "Tries to claim a task."
@@ -281,6 +281,33 @@
          (partition-name node)
          (vnode node))
     msg))
+
+(defn complete-local!
+  "Completes a given task on a local vnode."
+  [node msg]
+  (let [part (->> msg :task-id (partition-name node))]
+    (if-let [vnode (vnode node part)] 
+      (do (vnode/complete! vnode msg)
+          {:w 1})
+      {:error (str "I don't have partition" part "for task" (:task-id msg))})))
+
+(defn complete!
+  "Completes a given task in a given run. Proxies to all nodes owning that
+  task."
+  [node msg]
+  (let [w (get msg :w 2)
+        responses (net/sync-req! (:net node)
+                                 (preflist node (:task-id msg))
+                                 {:r w}
+                                 (merge msg {:type :complete-local
+                                             :time (flake/linear-time)}))
+        acks (remove :error responses)
+        w'    (reduce + (map :w acks))]
+    (if (<= w w')
+      {:w w'}
+      {:w w'
+       :error "not enough nodes acknowledged request for complete"
+       :responses responses})))
 
 (defn wipe!
   "Wipes all data clean."
@@ -319,6 +346,8 @@
        :claim              claim!
        :claim-local        claim-local!
        :request-claim      request-claim!
+       :complete           complete!
+       :complete-local     complete-local!
        :wipe               wipe!
        :wipe-local         wipe-local!
        :request-vote       request-vote!
