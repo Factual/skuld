@@ -12,6 +12,7 @@
             [skuld.net     :as net]
             [skuld.task    :as task]
             [skuld.aae     :as aae]
+            [skuld.politics :as politics]
             [clojure.set   :as set]
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
@@ -79,7 +80,8 @@
 ;                                       vnode/state))
 ;                    unelected)))
         (doseq [vnodes unelected]
-          (vnode/elect! (rand-nth vnodes)))
+          (with-redefs [vnode/election-timeout 0]
+            (vnode/elect! (rand-nth vnodes))))
         (Thread/sleep 100)
         (recur (remove partition-available? unelected)))))
 
@@ -193,7 +195,8 @@
         (->> vnodes
              (map #(future
                      (dotimes [i (rand-int 10)]
-                       (vnode/elect! %)
+                       (with-redefs [vnode/election-timeout 0]
+                         (vnode/elect! %))
                        (Thread/sleep (rand-int 10)))))
              (map deref)
              doall)
@@ -268,6 +271,7 @@
   ; Shut down normal AAE initiators; we don't want them recovering data behind
   ; our backs. ;-)
   (dorun (pmap (comp aae/shutdown! :aae) *nodes*))
+  (dorun (pmap (comp politics/shutdown! :politics) *nodes*))
 
   ; Enqueue something and claim it.
   (elect! *nodes*)

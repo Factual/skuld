@@ -9,6 +9,7 @@
             [skuld.aae :as aae]
             [skuld.task :as task]
             [skuld.curator :as curator]
+            [skuld.politics :as politics]
             [clj-helix.manager :as helix]
             clj-helix.admin
             clj-helix.fsm
@@ -426,18 +427,20 @@
         _           (deliver routerp router)
         clock-sync  (clock-sync/service net router vnodes)
         aae         (aae/service net router vnodes)
+        politics    (politics/service vnodes)
 
         ; Construct node
-        node {:host host
-              :port port
-              :net net
-              :curator curator
-              :router router
-              :clock-sync clock-sync
-              :aae aae
-              :participant participant
-              :controller controller
-              :vnodes vnodes}]
+        node {:host         host
+              :port         port
+              :net          net
+              :curator      curator
+              :router       router
+              :clock-sync   clock-sync
+              :aae          aae
+              :politics     politics
+              :participant  participant
+              :controller   controller
+              :vnodes       vnodes}]
 
     (net/add-handler! net (handler node))
 
@@ -471,6 +474,7 @@
   (when-let [c (:clock-sync node)] (clock-sync/shutdown! c))
   (when-let [aae (:aae node)]      (aae/shutdown! aae))
   (when-let [net (:net node)]      (net/shutdown! net))
+  (when-let [p (:politics node)]   (politics/shutdown! p))
 
   (->> (select-keys node [:participant :controller])
        vals
