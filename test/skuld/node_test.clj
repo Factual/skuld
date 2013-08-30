@@ -90,6 +90,7 @@
           (try
             (binding [*client* (client/client *nodes*)]
               (try
+                (Thread/sleep 1000)
                 (f)
                 (finally
                   (client/shutdown! *client*))))
@@ -131,7 +132,7 @@
   (let [n 10]
     (dotimes [i n]
       (client/enqueue! *client* {:w 3} {:data "sup"}))
-    
+   
     ; List
     (let [tasks (client/list-tasks *client*)]
       (is (= n (count tasks)))
@@ -279,7 +280,10 @@
                               (->> node
                                    vnodes
                                    vals
-                                   (mapcat vnode/tasks)
+                                   (mapcat (fn [v]
+                                             (try
+                                               (vnode/tasks v)
+                                               (catch RuntimeException e []))))
                                    (map :id)
                                    (some #{id})))
                             *nodes*)

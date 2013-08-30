@@ -24,8 +24,10 @@
                 :net
                 (net/sync-req! (list (peer client)) opts msg)
                 first)]
+    (when (nil? res)
+      (throw (RuntimeException. "request timed out.")))
     (when-let [error (:error res)]
-      (throw (RuntimeException. ^String error)))
+      (throw (RuntimeException. (str "server error: " error))))
     res))
 
 (defn wipe! [client]
@@ -36,9 +38,9 @@
   ([client task]
    (enqueue! client {} task))
   ([client opts task]
-    (:id (sync-req! client {} {:type :enqueue
-                               :w    (get opts :w 1)
-                               :task task}))))
+   (:id (sync-req! client {} {:type :enqueue
+                              :w    (get opts :w 1)
+                              :task task}))))
 
 (defn claim!
   "Claim a task for dt milliseconds. Returns a task."

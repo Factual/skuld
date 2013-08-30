@@ -17,6 +17,8 @@
 (clojure.core/declare sync-to!)
 (in-ns 'skuld.vnode)
 
+(declare wipe!)
+
 (defn vnode
   "Create a new vnode. Options:
   
@@ -37,8 +39,7 @@
                                            :cohort #{}}))
    :state     (atom {:type :follower
                      :leader nil
-                     :epoch 0})
-   :tasks     (atom (sorted-map))})
+                     :epoch 0})})
 
 ;; Leaders
 
@@ -166,15 +167,14 @@
                               (assoc state :type :follower)
                               state)))))
 
-(defn kill!
-  "Converts a zombie to state :dead, so that it can be cleaned up by the node."
+(defn shutdown!
+  "Converts a zombie to state :dead. Destroys all data on the vnode."
   [vnode]
   (locking vnode
-    (prn (net-id vnode) (:partition vnode) "slain!")
-    (swap! (:state vnode) (fn [state]
-                            (if (= :zombie (:type state))
-                              (assoc state :type :dead)
-                              state)))))
+    (when-not (= :dead @(:state vnode))
+      (reset! (:state vnode) :dead)
+      (wipe! vnode)
+      (db/close! (:db vnode)))))
 
 (defn majority-excluding-self
   "Given a vnode, and a set of nodes, how many responses from *other* nodes
@@ -204,7 +204,13 @@
                  ; Done
                  remaining
                  ; Copy data from another node and repeat
-                 (recur (if (sync-fn vnode node)
+                 (recur (if (try (sync-fn vnode node)
+                                 (catch RuntimeException e
+                                   (locking *out*
+                                     (.printStackTrace e)
+                                     (prn "while synchronizing"
+                                         (:partition vnode) "with" node))
+                                   false))
                           (dec remaining)
                           remaining)
                         more))))))
@@ -364,36 +370,30 @@
 
 ;; Tasks
 
-(defn enqueue!
-  "Enqueues a new task into this vnode."
-  [vnode task]
-  (let [id (:id task)]
-    (swap! (:tasks vnode) assoc id (assoc task :id id))))
-
 (defn merge-task!
   "Takes a task and merges it into this vnode."
   [vnode task]
-  (swap! (:tasks vnode) update-in [(:id task)] task/merge task))
+  (db/merge-task! (:db vnode) task))
 
 (defn get-task
   "Returns a specific task by ID."
   [vnode id]
-  (-> vnode :tasks deref (get id)))
+  (db/get-task (:db vnode) id))
 
 (defn ids
   "All task IDs in this vnode."
   [vnode]
-  (keys @(:tasks vnode)))
+  (db/ids (:db vnode)))
 
 (defn count-tasks
   "How many tasks are in this vnode?"
   [vnode]
-  (count @(:tasks vnode)))
+  (db/count-tasks (:db vnode)))
 
 (defn tasks
   "All tasks in this vnode."
   [vnode]
-  (vals @(:tasks vnode)))
+  (db/tasks (:db vnode)))
 
 (defn claimed
   "A subset of tasks which are claimed."
@@ -427,10 +427,7 @@
       (assert (not (zombie? vnode)))
       (if (= (:epoch msg) (epoch vnode))
         (do
-          (swap! (:tasks vnode)
-                 (fn [tasks]
-                   (assoc tasks id
-                          (task/request-claim (get tasks id) i claim))))
+          (db/claim-task! (:db vnode) id i claim)
           {})
         {:error (str "leader epoch " epoch
                      " does not match local epoch " (epoch vnode))}))
@@ -455,18 +452,7 @@
       (throw (IllegalStateException. "can't initiate claim: not a leader.")))
 
     ; Attempt to claim a task locally.
-    (when-let [task (locking vnode
-
-                      ; Pick an unclaimed task
-                      (when-let [unclaimed (->> vnode
-                                                tasks
-                                                (remove task/claimed?)
-                                                first)]
-                        (let [claimed (task/claim unclaimed dt)]
-                          ; Record local claim
-                          (swap! (:tasks vnode) assoc (:id claimed) claimed)
-                          claimed)))]
-
+    (when-let [task (db/claim-task! (:db vnode) dt)]
       (let [; Get claim details
             i     (dec (count (:claims task)))
             claim (nth (:claims task) i)
@@ -512,5 +498,5 @@
 (defn wipe!
   "Wipe a vnode's data clean."
   [vnode]
-  (reset! (:tasks vnode) (sorted-map))
+  (db/wipe! (:db vnode))
   vnode)

@@ -10,7 +10,9 @@
 (defn merkle-tree
   "Computes a merkle-tree of a vnode."
   [vnode]
-  (merkle/tree @(:tasks vnode)))
+  (merkle/tree (vnode/tasks vnode)
+               :id
+               identity))
 
 (defn merge-updates!
   "Merges :updates from a message into the given vnode. Returns true if
@@ -40,9 +42,10 @@
   (let [vnode (vnode vnodes msg)
         ; Diff against our local collection.
         remote-tree (merkle/map->node (:tree msg))
-        diffs (merkle/diff @(:tasks vnode)
+        diffs (merkle/diff (vnode/tasks vnode)
                            (merkle-tree vnode)
-                           remote-tree)]
+                           remote-tree
+                           :id)]
     {:updates (vals diffs)}))
 
 (defn handle-updates!
@@ -96,9 +99,10 @@
                              
     ; Compute diffs
     (let [remote-tree (merkle/map->node (:tree response))
-          updates (merkle/diff @(:tasks vnode)
+          updates (merkle/diff (vnode/tasks vnode)
                                (merkle-tree vnode)
-                               remote-tree)]
+                               remote-tree
+                               :id)]
 
       ; Send updates
       (when-not (:error (net/sync-req! (:net vnode)

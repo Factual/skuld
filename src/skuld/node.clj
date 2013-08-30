@@ -1,6 +1,7 @@
 (ns skuld.node
   "A single node in the Skuld cluster. Manages any number of vnodes."
-  (:use skuld.util)
+  (:use skuld.util
+        clojure.tools.logging)
   (:require [skuld.vnode :as vnode]
             [skuld.net :as net]
             [skuld.flake :as flake]
@@ -99,6 +100,7 @@
         id (:id task)]
     (let [r (or (:w msg) 1)
           preflist (preflist node id)
+          _ (assert (<= r (count preflist)))
           responses (net/sync-req! (:net node)
                                    preflist
                                    {:r r}
@@ -119,7 +121,7 @@
   (let [task (:task msg)
         part (partition-name node (:id task))]
     (if-let [vnode (vnode node part)]
-      (do (vnode/enqueue! vnode task)
+      (do (vnode/merge-task! vnode task)
           {:task-id (:id task)})
       {:error (str "I don't have partition" part "for task" (:id task))})))
 
@@ -249,7 +251,7 @@
         vals
         (filter vnode/leader?)
         (some (fn [vnode]
-                (try 
+                (try
                   (vnode/claim! vnode (or (:dt msg) 10000))
                   (catch Throwable t nil)))))})
 
@@ -318,7 +320,11 @@
 (defn wipe-local!
   "Wipe all data on the local node."
   [node msg]
-  (->> node vnodes vals (pmap vnode/wipe!) dorun)
+  (->> node vnodes vals
+       (pmap (fn [v]
+               (try (vnode/wipe! v)
+                    (catch RuntimeException e nil))))
+       dorun)
   {})
 
 (defn request-vote!
@@ -370,17 +376,21 @@
   (clj-helix.fsm/fsm
     fsm-def
     (:offline :peer [part m c]
-              (swap! vnodes (fn [vnodes]
-                              (if-let [existing (get vnodes part)]
-                                (do (vnode/revive! existing)
-                                    vnodes)
-                                (assoc vnodes part
-                                       (vnode/vnode {:partition part
-                                                     :curator curator
-                                                     :router @routerp
-                                                     :net net}))))))
+              (try
+                (locking vnodes
+                  (if-let [existing (get vnodes part)]
+                    (vnode/revive! existing)
+                    (swap! vnodes assoc part
+                           (vnode/vnode {:partition part
+                                         :curator curator
+                                         :router @routerp
+                                         :net net}))))
+                (catch Throwable t
+                  (locking *out* (prn t "bringing" part "online"))
+                  (throw t))))
 
-    (:offline :DROPPED [part m c])
+    (:offline :DROPPED [part m c]
+              (vnode/shutdown! (get @vnodes part)))
 
     (:peer :offline [part m c]
            (vnode/zombie! (get @vnodes part)))))
@@ -466,4 +476,10 @@
        vals
        (remove nil?)
        (map helix/disconnect!)
+       dorun)
+
+  (->> node
+       vnodes
+       vals
+       (pmap vnode/shutdown!)
        dorun))

@@ -21,6 +21,7 @@
                  [merkle "0.1.0-SNAPSHOT"]
                  [org.apache.curator/curator-recipes "2.0.1-incubating"]
                  [com.factual/clj-leveldb "0.1.0-SNAPSHOT"]]
+  :jvm-opts ^:replace ["-server"]
   :warn-on-reflection true
   :profiles {:dev {:dependencies [[criterium "0.4.1"]
                                   [com.google.guava/guava "14.0.1"]]}}

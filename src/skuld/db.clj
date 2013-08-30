@@ -1,12 +1,16 @@
 (ns skuld.db
   "Database backend interface."
+  (:use [potemkin :only [defprotocol+]])
   (:require [clojure.java.io :as io]))
 
-(defprotocol DB
+(defprotocol+ DB
     (ids [db])
     (tasks [db])
+    (unclaimed [db])
     (count-tasks [db])
     (get-task    [db ^Bytes id])
+    (claim-task! [db ^Bytes dt]
+                 [db ^Bytes id i claim])
     (merge-task! [db task])
     (close! [db])
     (wipe! [db]))

@@ -37,7 +37,9 @@
   (is (= 0 (count-tasks *db*)))
   (dotimes [i 1000]
     (merge-task! *db* (task/task {})))
-  (is (= 1000 (count-tasks *db*))))
+  (is (= 1000 (count-tasks *db*)))
+  (wipe! *db*)
+  (is (= 0 (count-tasks *db*))))
 
 (deftest tasks-test
   (let [ts (->> (fn [] {:data (rand)})
