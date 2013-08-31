@@ -18,7 +18,8 @@
                                   (pr-str (:node msg))
                                   "is"
                                   delta
-                                  "milliseconds!"))))))
+                                  "milliseconds!")))
+                        {})))                            
 
   (let [running (promise)]
     ; Periodically emit heartbeats to peers
