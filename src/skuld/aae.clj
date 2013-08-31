@@ -46,7 +46,7 @@
                            (merkle-tree vnode)
                            remote-tree
                            :id)]
-    {:updates (vals diffs)}))
+    {:updates diffs}))
 
 (defn handle-updates!
   "Given {:updates ...} from requester, applies them to local vnode and returns
