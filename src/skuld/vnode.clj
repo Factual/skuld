@@ -113,7 +113,7 @@
   "How long do we have to wait before initiating an election, in ms?"
   10000)
 
-(defn suppress-election
+(defn suppress-election!
   [vnode msg]
   (when (= (:epoch msg) (epoch vnode))
     (swap! (:last-leader-msg-time vnode) max (flake/linear-time))))
@@ -137,6 +137,7 @@
                                   :updated true}
                                  (assoc state dissoc :updated)))))]
         (when (:updated state)
+          (suppress-election! vnode msg)
           (llog (net-id vnode) (:partition vnode)
                 "assuming epoch" leader-epoch)
           state)))))
@@ -437,6 +438,7 @@
   map if the claim is successful, or {:error ...} if the claim failed."
   [vnode {:keys [id i claim] :as msg}]
   (accept-newer-epoch! vnode msg)
+  (suppress-election! vnode msg)
   (try
     (locking vnode
       (assert (not (zombie? vnode)))
