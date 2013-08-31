@@ -264,7 +264,7 @@
   [node peer msg]
   (assert (started? node))
   (let [c (conn node peer)]
-    (log- (:port node) "->" (:port peer) msg)
+;    (log- (:port node) "->" (:port peer) (pr-str msg))
     (.write c msg))
   node)
 

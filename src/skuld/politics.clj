@@ -22,9 +22,10 @@
                      (catch Throwable t
                        (warn t "electing" (:partition vnode))))))
                dorun)
-            (deref running 1000 true)
           (catch Throwable t
-            (warn t "in election cycle")))))
+            (warn t "in election cycle")))
+        (when (deref running 10000 true)
+          (recur))))
     running))
 
 (defn shutdown!

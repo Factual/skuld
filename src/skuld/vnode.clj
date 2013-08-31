@@ -47,9 +47,9 @@
 
 (defmacro llog
   "Log leader election messages"
-  [& args])
-;  `(locking *out*
-;    (prn ~@args)))
+  [& args]
+  `(locking *out*
+    (prn ~@args)))
 
 (defn peers
   "Peers for this vnode."
@@ -84,10 +84,18 @@
   [vnode]
   (= :follower (:type (state vnode))))
 
+(defn candidate?
+  "Is this vnode a candidate?"
+  [vnode]
+  (= :candidate (:type (state vnode))))
+
 (defn active?
   "Is this vnode a leader or peer?"
   [vnode]
-  (or (leader? vnode) (follower? vnode)))
+  (-> vnode
+      state
+      :type
+      #{:leader :follower :candidate}))
 
 (defn zombie?
   "Is this vnode a zombie?"
@@ -280,8 +288,11 @@
   (llog (net-id vnode) (:partition vnode) "initiating election")
   (locking vnode
     (when (active? vnode)
-      (when (< (+ @(:last-leader-msg-time vnode) election-timeout )
+      (llog :active)
+
+      (when (< (+ @(:last-leader-msg-time vnode) election-timeout)
                (flake/linear-time))
+        (llog "leader is outdated")
 
         ; First, compute the set of peers that will comprise the next epoch.
         (let [self       (net-id vnode)

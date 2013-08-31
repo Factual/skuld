@@ -28,7 +28,7 @@
 
 (def clock-skew-buffer
   "We allow nodes and clocks to drift by this much."
-  (* 1000 60 60))
+  (* 1000 60))
 
 (defn task
   "Creates a new task around the given map."
