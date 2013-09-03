@@ -66,6 +66,14 @@ And missing subsystems include:
 - Task dependencies
 - Garbage collection
 
+## How can I help?
+
+Hop on #skuld on Freenode, or hit me up at <a
+href="mailto:kingsbury@factual.com">kingsbury@factual.com</a>; I'm happy to
+answer questions and help you get started working on improvements. You'll want
+a basic command of Clojure to start, but distributed systems expertise isn't
+required; there are lots of Skuld internals from disk persistence to data structures to HTTP servers that need your help!
+
 ## Getting started
 
 You'll need a Zookeeper cluster, and lein 2. To create a cluster, run:
