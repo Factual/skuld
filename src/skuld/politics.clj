@@ -10,18 +10,17 @@
     (future
       (loop []
         (try
-          (->> vnodes
-               deref
-               vals
-               shuffle
-               (pmap
-                 (fn [vnode]
-                   (try
-                     (Thread/sleep (rand-int 100))
-                     (vnode/elect! vnode)
-                     (catch Throwable t
-                       (warn t "electing" (:partition vnode))))))
-               dorun)
+          (when-let [vnodes (-> vnodes deref vals)]
+            (->> vnodes 
+                 shuffle
+                 (pmap
+                   (fn [vnode]
+                     (try
+                       (Thread/sleep (rand-int 100))
+                       (vnode/elect! vnode)
+                       (catch Throwable t
+                         (warn t "electing" (:partition vnode))))))
+               dorun))
           (catch Throwable t
             (warn t "in election cycle")))
         (when (deref running 10000 true)
