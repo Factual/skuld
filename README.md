@@ -1,3 +1,5 @@
+<img src="https://raw.github.com/Factual/skuld/master/doc/rackham.jpg" style="width: 100%" />
+
 # Skuld
 
 Skuld is (or aims to become) a hybrid AP/CP distributed task queue, targeting
