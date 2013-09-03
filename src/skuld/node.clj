@@ -215,6 +215,7 @@
         cover     (cover node)
         all-parts (set (all-partitions node))]
     (doseq [[peer parts] cover]
+      (assert peer)
       (net/req! (:net node) [peer] {} (assoc msg :partitions parts)
                 [[response]]
                 (let [responses (swap! responses merge (:partitions response))]
