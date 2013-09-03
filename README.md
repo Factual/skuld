@@ -66,106 +66,6 @@ And missing subsystems include:
 - Task dependencies
 - Garbage collection
 
-## How can I help?
-
-Hop on #skuld on Freenode, or hit me up at <a
-href="mailto:kingsbury@factual.com">kingsbury@factual.com</a>; I'm happy to
-answer questions and help you get started working on improvements. You'll want
-a basic command of Clojure to start, but distributed systems expertise isn't
-required; there are lots of Skuld internals from disk persistence to data structures to HTTP servers that need your help!
-
-## Getting started
-
-You'll need a Zookeeper cluster, and lein 2. To create a cluster, run:
-
-```
-lein run cluster create skuld -z some.zk.node:2181 --partitions 8 --replicas 3
-```
-
-And add a few nodes. Yeah, this is slow. I'm sorry.
-
-```
-lein run cluster add --host "127.0.0.1" --port 13000
-lein run cluster add --host "127.0.0.1" --port 13001
-lein run cluster add --host "127.0.0.1" --port 13002
-```
-
-Open a few shells, and fire em up!
-
-```
-lein run start --host 127.0.0.1 --port 13000
-lein run start --host 127.0.0.1 --port 13001
-lein run start --host 127.0.0.1 --port 13002
-```
-
-Open a repl (`lein repl`)
-
-```clj
-; Suck in the library
-skuld.bin=> (use 'skuld.client)
-
-; And set up the request ID generator
-skuld.bin=> (skuld.flake/init!)
-
-; OK, let's define a client with a few hosts to talk to:
-skuld.bin=> (def c (client [{:host "127.0.0.1" :port 13000} {:host "127.0.0.1" :port 13001]))
-
-; There are no tasks in the system now:
-skuld.bin=> (count-tasks c)
-0
-
-; We can enqueue a task with some payload
-skuld.bin=> (enqueue! c {:data "sup?"})
-#<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>
-
-; Now there's 1 task
-skuld.bin=> (count-tasks c)
-1
-
-; Which we can show like so:
-skuld.bin=> (pprint (list-tasks c))
-({:data "sup?",
-  :id #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>,
-  :claims []})
-nil
-
-; And now we can claim a task for 10 seconds
-skuld.bin=> (def t (claim! c 10000))
-#'skuld.bin/t
-skuld.bin=> (pprint t)
-{:data "sup?",
- :id #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>,
- :claims [{:start 1377913791803, :end 1377913801803, :completed nil}]}
-nil
-
-; We can't claim any other tasks during this time
-skuld.bin=> (claim! c 10000)
-nil
-
-; But if we wait long enough, Skuld will decide the claim has expired. Once a
-; quorum of nodes agree that the claim is outdated, we can re-claim the same
-; task:
-skuld.bin=> (Thread/sleep 60000) (def t2 (claim! c 10000))
-nil
-#'skuld.bin/t2
-skuld.bin=> t2
-{:data "sup?", :id #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>, :claims [{:start 1377913791803, :end 1377913801803, :completed nil} {:start 1377913903904, :end 1377913913904, :completed nil}]}
-
-; Now let's mark that task, in claim 1, as being complete:
-skuld.bin=> (complete! c (:id t2) 1)
-2
-
-; If we ask Skuld what happened to the task, it'll show both claims, one
-; completed:
-skuld.bin=> (pprint (get-task c (:id t2)))
-{:data "sup?",
- :id #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>,
- :claims
- [{:start 1377913791803, :end 1377913801803, :completed nil}
-  {:start 1377913903904, :end 1377913913904, :completed 1377913942979}]}
-nil
-```
-
 ## Concepts
 
 Skuld works with queues, which are named by strings. Queues comprise a set of
@@ -309,7 +209,6 @@ because they may still be required to hand off their claim set. After step 8,
 we inform all zombies which are not a part of our new cohort that it is safe
 to drop their claim set."
 
-
 ### Recovery
 
 A vnode allows a task to be claimed, in the event of failure, once the claim's
@@ -317,6 +216,107 @@ time has expired relative to the local clock *including* a buffer larger than
 the maximum clock skew, message propagation delay, GC time, etc: on the order
 of minutes to hours. Shorter buffers increase the probability that claims will
 overlap.
+
+## Getting started
+
+You'll need a Zookeeper cluster, and lein 2. To create a cluster, run:
+
+```
+lein run cluster create skuld -z some.zk.node:2181 --partitions 8 --replicas 3
+```
+
+And add a few nodes. Yeah, this is slow. I'm sorry.
+
+```
+lein run cluster add --host "127.0.0.1" --port 13000
+lein run cluster add --host "127.0.0.1" --port 13001
+lein run cluster add --host "127.0.0.1" --port 13002
+```
+
+Open a few shells, and fire em up!
+
+```
+lein run start --host 127.0.0.1 --port 13000
+lein run start --host 127.0.0.1 --port 13001
+lein run start --host 127.0.0.1 --port 13002
+```
+
+Open a repl (`lein repl`)
+
+```clj
+; Suck in the library
+skuld.bin=> (use 'skuld.client)
+
+; And set up the request ID generator
+skuld.bin=> (skuld.flake/init!)
+
+; OK, let's define a client with a few hosts to talk to:
+skuld.bin=> (def c (client [{:host "127.0.0.1" :port 13000} {:host "127.0.0.1" :port 13001]))
+
+; There are no tasks in the system now:
+skuld.bin=> (count-tasks c)
+0
+
+; We can enqueue a task with some payload
+skuld.bin=> (enqueue! c {:data "sup?"})
+#<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>
+
+; Now there's 1 task
+skuld.bin=> (count-tasks c)
+1
+
+; Which we can show like so:
+skuld.bin=> (pprint (list-tasks c))
+({:data "sup?",
+  :id #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>,
+  :claims []})
+nil
+
+; And now we can claim a task for 10 seconds
+skuld.bin=> (def t (claim! c 10000))
+#'skuld.bin/t
+skuld.bin=> (pprint t)
+{:data "sup?",
+ :id #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>,
+ :claims [{:start 1377913791803, :end 1377913801803, :completed nil}]}
+nil
+
+; We can't claim any other tasks during this time
+skuld.bin=> (claim! c 10000)
+nil
+
+; But if we wait long enough, Skuld will decide the claim has expired. Once a
+; quorum of nodes agree that the claim is outdated, we can re-claim the same
+; task:
+skuld.bin=> (Thread/sleep 60000) (def t2 (claim! c 10000))
+nil
+#'skuld.bin/t2
+skuld.bin=> t2
+{:data "sup?", :id #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>, :claims [{:start 1377913791803, :end 1377913801803, :completed nil} {:start 1377913903904, :end 1377913913904, :completed nil}]}
+
+; Now let's mark that task, in claim 1, as being complete:
+skuld.bin=> (complete! c (:id t2) 1)
+2
+
+; If we ask Skuld what happened to the task, it'll show both claims, one
+; completed:
+skuld.bin=> (pprint (get-task c (:id t2)))
+{:data "sup?",
+ :id #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>,
+ :claims
+ [{:start 1377913791803, :end 1377913801803, :completed nil}
+  {:start 1377913903904, :end 1377913913904, :completed 1377913942979}]}
+nil
+```
+
+## How can I help?
+
+Hop on #skuld on Freenode, or hit me up at <a
+href="mailto:kingsbury@factual.com">kingsbury@factual.com</a>; I'm happy to
+answer questions and help you get started working on improvements. You'll want
+a basic command of Clojure to start, but distributed systems expertise isn't
+required; there are lots of Skuld internals from disk persistence to data
+structures to HTTP servers that need your help!
 
 ## License
 
