@@ -68,3 +68,15 @@
                          (filter (comp (partial <= m) count val))
                          first)]
       (key pair))))
+
+(defn assocv
+  "Like assoc for vectors, but unlike assoc, allows you to assoc in indices
+  which are greater than (count v)."
+  [v idx value]
+  (let [c (count v)]
+    (if (<= idx c)
+      (assoc v idx value)
+      (-> v
+          (concat (repeat (- idx c) nil)
+                  (list value))
+          vec))))

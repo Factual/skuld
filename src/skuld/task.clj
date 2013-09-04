@@ -7,15 +7,19 @@
 
   A claim is a map of:
 
-  {:start  (long) milliseconds in linear time
-   :end    (long) milliseconds in linear time}"
+  {:start     (long) milliseconds in linear time
+   :end       (long) milliseconds in linear time
+   :completed (long) milliseconds in linear time}"
   (:refer-clojure :exclude [merge])
+  (:use skuld.util)
   (:require [skuld.flake :as flake]
             [taoensso.nippy :as nippy])
   (:import com.aphyr.skuld.Bytes
            (java.io DataOutputStream
                     DataInputStream)))
 
+; These probably don't belong here, but it seemed as good a place as anywhere
+; else. Maybe move to util?
 (nippy/extend-freeze Bytes 1
                      [^Bytes b ^DataOutputStream out]
                      (.write out (.bytes b) 0 (alength (.bytes b))))
@@ -68,10 +72,14 @@
   (when (completed? task)
     (throw (IllegalStateException. "task is completed")))
 
+  (when (nth (:claims task) idx nil)
+    (throw (IllegalStateException. (str "already have a claim for " idx))))
+
   (let [start (:start claim)]
-    (if (some #(<= start (:end %)) (:claims task))
+    (if (some #(<= start (+ clock-skew-buffer (:end %))) (:claims task))
       (throw (IllegalStateException. "task already claimed"))
-      (assoc-in task [:claims idx] claim))))
+      (assoc task :claims
+             (assocv (:claims task) idx claim)))))
 
 (defn claim
   "Returns a copy of a task claimed for dt milliseconds. (last (:claims task))
