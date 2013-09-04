@@ -49,7 +49,7 @@
   "Log leader election messages"
   [& args]
   `(locking *out*
-    (prn ~@args)))
+    (info ~@args)))
 
 (defn peers
   "Peers for this vnode."
@@ -163,7 +163,7 @@
   "Forces a leader to step down."
   [vnode]
   (locking vnode
-    (prn (net-id vnode) (:partition vnode) "demoted")
+    (info (net-id vnode) (:partition vnode) "demoted")
     (swap! (:state vnode) (fn [state]
                            (if (= :leader (:type state))
                              (assoc state :type :follower)
@@ -174,14 +174,14 @@
   its data to a leader."
   [vnode]
   (locking vnode
-    (prn (net-id vnode) (:partition vnode) "now zombie")
+    (info (net-id vnode) (:partition vnode) "now zombie")
     (swap! (:state vnode) assoc :type :zombie)))
 
 (defn revive!
   "Converts dead or zombie vnodes into followers."
   [vnode]
   (locking vnode
-    (prn (net-id vnode) (:partition vnode) "revived!")
+    (info (net-id vnode) (:partition vnode) "revived!")
     (swap! (:state vnode) (fn [state]
                             (if (#{:zombie :dead} (:type state))
                               (assoc state :type :follower)
@@ -227,8 +227,7 @@
                  (recur (if (try (sync-fn vnode node)
                                  (catch RuntimeException e
                                    (locking *out*
-                                     (.printStackTrace e)
-                                     (prn "while synchronizing"
+                                     (error e "while synchronizing"
                                          (:partition vnode) "with" node))
                                    false))
                           (dec remaining)
@@ -368,7 +367,7 @@
                   (if-not (sync-with-majority! vnode
                                                new-cohort
                                                skuld.aae/sync-to!)
-                    (prn "Wasn't able to replicate to enough of new cohort; cannot become leader.") 
+                    (error "Wasn't able to replicate to enough of new cohort; cannot become leader.")
 
                     ; Update ZK with new cohort and epoch--but only if nobody else
                     ; got there first.

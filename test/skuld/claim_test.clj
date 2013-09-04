@@ -1,10 +1,10 @@
 (ns skuld.claim-test
-  (:use [clj-helix.logging :only [mute]]
-        clojure.tools.logging
+  (:use clojure.tools.logging
         clojure.test
         skuld.util
         skuld.node
         skuld.node-test)
+
   (:require [skuld.client  :as client]
             [skuld.admin   :as admin]
             [skuld.vnode   :as vnode]

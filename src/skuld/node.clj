@@ -388,7 +388,7 @@
                                          :router @routerp
                                          :net net}))))
                 (catch Throwable t
-                  (locking *out* (prn t "bringing" part "online"))
+                  (locking *out* (debug t "bringing" part "online"))
                   (throw t))))
 
     (:offline :DROPPED [part m c]
