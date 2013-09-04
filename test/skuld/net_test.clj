@@ -119,15 +119,18 @@
   "Verifies that timeouts work correctly."
   (let [a (node {:port 13000})
         b (node {:port 13001})
+        rs (promise)
         done (promise)]
     (try
+      ; Here's a slow handler for B
       (add-handler! b (fn [x] (Thread/sleep 3000) (deliver done true) x))
       (dorun (pmap start! [a b]))
 
       (req! a [b] {:r 1 :timeout 1000} {:hi :there}
             [responses]
-            (is false))
+            (deliver rs responses))
       
+      (is (= [] @rs))
       @done
       (Thread/sleep 100)
 
