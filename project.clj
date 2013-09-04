@@ -9,7 +9,7 @@
                  [org.clojure/tools.cli "0.2.2"]
                  [org.clojure/tools.logging "0.2.3"]
                  [factual/clj-helix "0.1.0"]
-                 [io/netty/netty "4.0.0.Alpha8"]
+                 [io.netty/netty "4.0.0.Alpha8"]
                  [com.taoensso/nippy "2.1.0"]
                  [com.google.protobuf/protobuf-java "2.5.0"]
                  [org.clojure/data.codec "0.1.0"]
