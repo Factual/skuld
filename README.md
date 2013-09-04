@@ -9,14 +9,15 @@ priority+FIFO ordering, and reasonable bounds on task execution mutexing. Each
 run of a task can log status updates to Skuld, checkpointing their progress and
 allowing users to check how far along their tasks have gone.
 
-Skuld combines techniques from many distributed systems: Dynamo-style
+Skuld combines techniques from many distributed systems: [Dynamo][dynamo]-style
 consistent hashing, quorums over vnodes, and anti-entropy provide the
 highly-available basis for Skuld's immutable dataset, including enqueues,
-updates, and completions. All AP operations are represented by Convergent
-Replicated Data Types (CRDTs), ensuring convergence in the absence of strong
-consistency. CP operations (e.g.  claims) are supported by a leader
-election/quorum protocol similar to Viewstamped Replication or Raft, supported
-by additional constraints on handoff transitions between disparate cohorts.
+updates, and completions. All AP operations are represented by [Convergent
+Replicated Data Types (CRDTs)][crdts], ensuring convergence in the absence of
+strong consistency. CP operations (e.g.  claims) are supported by a leader
+election/quorum protocol similar to [Viewstamped Replication][viewstamped] or
+[Raft][raft], supported by additional constraints on handoff transitions between
+disparate cohorts.
 
 Skuld relies on semi-synchronized clocks: the network, GC pauses, and clock
 skew may introduce message skew of no more than eta seconds. Skuld is intended
@@ -36,7 +37,7 @@ Right now, Skuld can:
 
 - Create and destroy clusters.
 - Balance vnodes
-- Heal failures via merkle-tree-backed active anti-entropy
+- Heal failures via [Merkle-tree][merkle]-backed active anti-entropy
 - Elect leaders when a majority component is available
 - Enqueue tasks
 - Claim tasks
@@ -53,7 +54,7 @@ Major drawbacks include but are not limited to:
 - No concept of streaming requests
 - Clock sync detector doesn't do anything when it finds nodes are misaligned
 - Incoherent logging
-- All cluster transitions rely on Zookeeper (via Apache Helix)
+- All cluster transitions rely on [ZooKeeper][zk] (via [Apache Helix][helix])
 - Probably a whole bunch of bugs I don't know about yet
 
 And missing subsystems include:
@@ -110,11 +111,12 @@ consistent, and are gossiped continuously between all N nodes via hash trees.
 
 ### Enqueue
 
-To enqueue a task, generate a 160-bit flake ID and assign it to the task.
-Compute the partition for that ID. Broadcast the task to all nodes in that
+To enqueue a task, generate a 160-bit [Flake ID][flake] and assign it to the
+task. Compute the partition for that ID. Broadcast the task to all nodes in that
 partition. Wait for a quorum of nodes to respond by default; though the client
 could request a smaller or larger W val. Once a W nodes have acked the task,
-respond to the client with the number of acking nodes. By giving the generated ID back to the client, the client can retry its write idempotently.
+respond to the client with the number of acking nodes. By giving the generated
+ID back to the client, the client can retry its write idempotently.
 
 ### Claim
 
@@ -147,7 +149,12 @@ reasonably possible. Update is idempotent.
 
 ### Complete
 
-To mark the message as complete, send a complete message to any node with a sequence number, just like an update. The coordinator broadcasts that update to all nodes for the task's partition. Those nodes immediately remove the task from their claim set, write the complete message to disk, and return an acknowledgement. When W nodes have acknowledged the update, the coordinator returns success to the client.
+To mark the message as complete, send a complete message to any node with a
+sequence number, just like an update. The coordinator broadcasts that update to
+all nodes for the task's partition. Those nodes immediately remove the task from
+their claim set, write the complete message to disk, and return an
+acknowledgement. When W nodes have acknowledged the update, the coordinator
+returns success to the client.
 
 ### Clocksync
 
@@ -156,7 +163,10 @@ any differ by more than a few seconds, the furthest ahead kills itself.
 
 ### Active anti-entropy
 
-All nodes regularly gossip Merkle trees of their immutable dataset to any peers in their partition, and replicate missing blocks. All followers regularly exchange Merkle trees of their claim set with the current leader, and copy the leader's data where different.
+All nodes regularly gossip Merkle trees of their immutable dataset to any peers
+in their partition, and replicate missing blocks. All followers regularly
+exchange Merkle trees of their claim set with the current leader, and copy the
+leader's data where different.
 
 ### Leaders
 
@@ -166,11 +176,11 @@ In becoming a leader, we need to ensure that:
 2. Each leader's claim set is a superset of the previous leader
 
 We have: a target cohort of nodes for the new epoch, provided by Helix.
-Some previous cohort of nodes belonging to the old epoch, tracked by ZK.
+Some previous cohort of nodes belonging to the old epoch, tracked by ZooKeeper.
 
 To become a leader, one must successfully:
 
-1. Read the previous epoch+cohort from ZK
+1. Read the previous epoch+cohort from ZooKeeper
 
 2. (optimization) Ensure that the previous epoch is strictly less than the
 epoch this node is going to be the leader for.
@@ -197,7 +207,7 @@ our local claim set.
   - This ensures that any *future* epoch will correctly recover our claim
     set. 6 + 7 provide a continuous history of claims, by induction.
 
-8. CAS our new epoch and cohort into zookeeper, ensuring that nobody else
+8. CAS our new epoch and cohort into ZooKeeper, ensuring that nobody else
    beat us to it.
 
 If any stage fails, delay randomly and retry.
@@ -219,7 +229,7 @@ overlap.
 
 ## Getting started
 
-You'll need a Zookeeper cluster, and lein 2. To create a cluster, run:
+You'll need a ZooKeeper cluster, and lein 2. To create a cluster, run:
 
 ```
 lein run cluster create skuld -z some.zk.node:2181 --partitions 8 --replicas 3
@@ -311,15 +321,25 @@ nil
 
 ## How can I help?
 
-Hop on #skuld on Freenode, or hit me up at <a
-href="mailto:kingsbury@factual.com">kingsbury@factual.com</a>; I'm happy to
-answer questions and help you get started working on improvements. You'll want
-a basic command of Clojure to start, but distributed systems expertise isn't
-required; there are lots of Skuld internals from disk persistence to data
-structures to HTTP servers that need your help!
+Hop on #skuld on Freenode, or hit me up at
+[kingsbury@factual.com](mailto:kingsbury@factual.com); I'm happy to answer
+questions and help you get started working on improvements. You'll want a basic
+command of Clojure to start, but distributed systems expertise isn't required;
+there are lots of Skuld internals from disk persistence to data structures to
+HTTP servers that need your help!
 
 ## License
 
 Copyright © 2013 Factual, Inc
 
 Distributed under the Eclipse Public License, the same as Clojure.
+
+[dynamo]: http://www.allthingsdistributed.com/2007/10/amazons_dynamo.html
+[crdts]: http://pagesperso-systeme.lip6.fr/Marc.Shapiro/papers/RR-6956.pdf
+[raft]: https://ramcloud.stanford.edu/wiki/download/attachments/11370504/raft.pdf
+[viewstamped]: http://www.cs.princeton.edu/courses/archive/fall09/cos518/papers/viewstamped.pdf
+[merkle]: http://en.wikipedia.org/wiki/Merkle_tree
+[flake]: http://boundary.com/blog/2012/01/12/flake-a-decentralized-k-ordered-unique-id-generator-in-erlang/
+[zk]: http://zookeeper.apache.org/
+[helix]: http://helix.incubator.apache.org/
+
