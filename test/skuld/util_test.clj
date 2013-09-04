@@ -19,6 +19,3 @@
     (time (dorun (sorted-interleave (take 1000000 (iterate inc 0))
                                     (take 1000000 (iterate inc 1))
                                     (range 500 1000000))))))
-                                  
-                                    
-
