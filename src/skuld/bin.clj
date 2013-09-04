@@ -1,6 +1,7 @@
 (ns skuld.bin
   (:use [clj-helix.logging :only [mute]]
-        [clojure.tools.cli :only [cli]])
+        [clojure.tools.cli :only [cli]]
+        clojure.tools.logging)
   (:require [skuld.admin :as admin]
             [skuld.node :as node]
             [skuld.flake :as flake])
@@ -67,8 +68,8 @@
                       (Thread. (bound-fn []
                                  (node/shutdown! controller))))
 
-    (println "Controller started.")
-    (prn controller)
+    (info "Controller started.")
+    (debug controller)
     @(promise)))
 
 (defn start [& args]
@@ -80,7 +81,7 @@
                       (Thread. (bound-fn []
                                  (node/shutdown! node))))
 
-    (prn :started node)
+    (info :started node)
     @(promise)))
 
 (defn -main
