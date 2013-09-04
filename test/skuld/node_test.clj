@@ -13,6 +13,7 @@
             [skuld.task    :as task]
             [skuld.aae     :as aae]
             [skuld.politics :as politics]
+            [skuld.logging :as logging]
             [clojure.set   :as set]
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
@@ -20,7 +21,8 @@
 (flake/init!)
 
 (def admin
-  (admin/admin {:partitions 2 :replicas 3}))
+  (logging/with-level :warn ["org.apache.zookeeper" "org.apache.helix" "org.I0Itec.zkclient"]
+    (admin/admin {:partitions 2 :replicas 3})))
 
 (def ^:dynamic *client* nil)
 (def ^:dynamic *nodes* nil)
@@ -74,8 +76,8 @@
                         (remove partition-available?))]
       (when-not (empty? unelected)
         (locking *out*
-          (prn (count unelected) "unelected partitions"))
-;          (prn (map (partial map (juxt (comp :port vnode/net-id)
+          (debug (count unelected) "unelected partitions"))
+;          (debug (map (partial map (juxt (comp :port vnode/net-id)
 ;                                       :partition
 ;                                       vnode/state))
 ;                    unelected)))

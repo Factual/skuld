@@ -74,7 +74,7 @@
                   i  (InputStreamReader. is)
                   r  (PushbackReader. i)]
         (binding [*read-eval* false]
-;          (prn "Got" (.toString buffer (Charset/forName "UTF-8")))
+;          (debug "Got" (.toString buffer (Charset/forName "UTF-8")))
           (edn/read r))))))
 
 (defn nippy-codec []
