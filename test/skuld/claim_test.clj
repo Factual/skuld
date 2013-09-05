@@ -23,21 +23,21 @@
 (use-fixtures :each each)
 
 (deftest reclaim-test
-  (with-redefs [task/clock-skew-buffer 50]
+  (with-redefs [task/clock-skew-buffer 500]
     (let [id (client/enqueue! *client* {:w 3} {:data "maus"})]
       (elect! *nodes*)
-      (is (= id (:id (client/claim! *client* 100))))
+      (is (= id (:id (client/claim! *client* 1000))))
       
       ; Can't reclaim, because it's already claimed
-      (is (nil? (client/claim! *client* 100)))
+      (is (nil? (client/claim! *client* 1000)))
       
-      ; Can't reclaim after 100ms because clock skew buffer still holds
-      (Thread/sleep 101)
-      (is (nil? (client/claim! *client* 100)))
+      ; Can't reclaim after 1000ms because clock skew buffer still holds
+      (Thread/sleep 1001)
+      (is (nil? (client/claim! *client* 1000)))
       
       ; But after the buffer has elapsed, good to go. 
-      (Thread/sleep 50)
-      (let [t (client/claim! *client* 100)]
+      (Thread/sleep 500)
+      (let [t (client/claim! *client* 1000)]
         (is (= id (:id t)))
         (is (= 2 (count (:claims t))))
         (is (= "maus" (:data t)))))))
