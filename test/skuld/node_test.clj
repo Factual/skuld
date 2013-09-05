@@ -40,14 +40,15 @@
   "Returns a vector of a bunch of started nodes."
   []
   (let [nodes (->> (range 5)
-                   (pmap #(node {:port (+ 13000 %)}))
+                   (pmap #(wait-for-peers (node {:port (+ 13000 %)})))
                    doall)
         vnodes (->> nodes
                     (map vnodes)
                     (mapcat vals))]
-    (doseq [vnode vnodes]
-      (curator/reset!! (vnode/zk-leader vnode) {:epoch 0
-                                                :cohort #{}}))
+    (->> vnodes
+         (pmap #(curator/reset!! (vnode/zk-leader %) {:epoch 0
+                                                      :cohort #{}}))
+         dorun)
     nodes))
 
 (defn shutdown-nodes!
@@ -90,11 +91,13 @@
 (defn once
   [f]
   (mute (ensure-cluster!))
+  (prn :starting-nodes)
   (mute (binding [*nodes* (start-nodes!)]
           (try
+            (prn :starting-client)
             (binding [*client* (client/client *nodes*)]
               (try
-                (Thread/sleep 1000)
+                (prn :running)
                 (f)
                 (finally
                   (client/shutdown! *client*))))

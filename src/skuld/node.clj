@@ -196,8 +196,10 @@
   (->> node
        all-partitions
        (reduce (fn [m part]
-                 (let [peer (first (peers node part))]
-                   (update-in m [peer] conj part)))
+                 (if-let [peer (first (peers node part))]
+                   (update-in m [peer] conj part)
+                   (throw (RuntimeException.
+                            (str "no known nodes for partition " part)))))
                {})))
 
 (defn coverage
@@ -449,6 +451,16 @@
     (net/start! net)
 
     node))
+
+(defn wait-for-peers
+  "Blocks until all partitions are known to exist on a peer, then returns node."
+  [node]
+  (while (->> node
+              all-partitions
+              (map (partial peers node))
+              (some empty?))
+    (Thread/sleep 10))
+  node)
 
 (defn controller
   "Creates a new controller, with the given options.
