@@ -27,7 +27,7 @@
   [vnodes msg]
   (let [part (:partition msg)]
     (or (get @vnodes part)
-        (throw (RuntimeException. "no such vnode" part)))))
+        (throw (RuntimeException. (str "no such vnode " part))))))
 
 (defn handle-tree
   "Returns the local {:tree ...} for a requested vnode."
