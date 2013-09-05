@@ -17,15 +17,21 @@
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
 
-(flake/init!)
-
 (use-fixtures :once once)
 (use-fixtures :each each)
 
+(deftest claim-test
+  (elect! *nodes*)
+  (let [id (client/enqueue! *client* {:w 3} {:data "hi"})]
+    (is id)
+    (let [task (client/claim! *client* {:timeout 5000} 1000)]
+      (is (= id (:id task)))
+      (is (task/claimed? task)))))
+
 (deftest reclaim-test
+  (elect! *nodes*)
   (with-redefs [task/clock-skew-buffer 500]
     (let [id (client/enqueue! *client* {:w 3} {:data "maus"})]
-      (elect! *nodes*)
       (is (= id (:id (client/claim! *client* 1000))))
       
       ; Can't reclaim, because it's already claimed
@@ -43,8 +49,8 @@
         (is (= "maus" (:data t)))))))
 
 (deftest complete-test
+  (elect! *nodes*)
   (with-redefs [task/clock-skew-buffer 0]
-    (elect! *nodes*)
     (let [id (client/enqueue! *client* {:data "sup"})]
       (is (client/claim! *client* 1))
 
@@ -59,3 +65,5 @@
       ; Can't re-claim.
       (Thread/sleep 2)
       (is (nil? (client/claim! *client* 100))))))
+
+
