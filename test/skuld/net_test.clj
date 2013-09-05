@@ -25,7 +25,7 @@
       (start! node)
       (doseq [m msgs] (send-sync! node node m))
       @done
-      (is (= msgs @log))
+      (is (= (set msgs) (set @log)))
 
       (finally
         (shutdown! node)))))

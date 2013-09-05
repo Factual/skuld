@@ -99,15 +99,18 @@
   [f]
   (proxy [ChannelInboundMessageHandlerAdapter] [(into-array Class [Object])]
     (messageReceived [^ChannelHandlerContext ctx message]
-      (when-let [response (try (f message)
-                               (catch Throwable t
-                                 (locking *out*
-                                   (println "Node handler caught:")
-                                   (.printStackTrace t))
-                                 {:error (str (.getMessage t)
-                                              (with-out-str
-                                                (trace/print-cause-trace t)))}))]
-        (.write ctx (assoc response :request-id (:request-id message)))))))
+      ; Pretty sure we're seeing deadlocks due to threadpool starvation.
+      ; Let's try futures here.
+      (future
+        (when-let [response (try (f message)
+                                 (catch Throwable t
+                                   (locking *out*
+                                     (println "Node handler caught:")
+                                     (.printStackTrace t))
+                                   {:error (str (.getMessage t)
+                                                (with-out-str
+                                                  (trace/print-cause-trace t)))}))]
+        (.write ctx (assoc response :request-id (:request-id message))))))))
 
 (defonce peer-attr
   (AttributeKey. "skuld-peer"))
