@@ -2,6 +2,7 @@
   (:use [clj-helix.logging :only [mute]]
         clojure.tools.logging
         clojure.test
+        skuld.zk-test
         skuld.util
         skuld.node)
   (:require [skuld.client  :as client]
@@ -20,16 +21,20 @@
 
 (flake/init!)
 
-(def admin
+(defn admin
+  [zk]
   (logging/with-level :warn ["org.apache.zookeeper" "org.apache.helix" "org.I0Itec.zkclient"]
-    (admin/admin {:partitions 2 :replicas 3})))
+    (admin/admin {:partitions 2
+                  :replicas 3
+                  :zookeeper zk})))
 
 (def ^:dynamic *client* nil)
 (def ^:dynamic *nodes* nil)
+(def ^:dynamic *zk* nil)
 
 (defn ensure-cluster!
   "Ensures a test cluster exists."
-  []
+  [admin]
   (when-not (some #{"skuld"} (clj-helix.admin/clusters (:helix admin)))
     (admin/destroy-cluster! admin)
     (admin/create-cluster! admin)
@@ -38,9 +43,10 @@
 
 (defn start-nodes!
   "Returns a vector of a bunch of started nodes."
-  []
+  [zk]
   (let [nodes (->> (range 5)
-                   (pmap #(wait-for-peers (node {:port (+ 13000 %)})))
+                   (pmap #(wait-for-peers (node {:port (+ 13000 %)
+                                                 :zookeeper zk})))
                    doall)
         vnodes (->> nodes
                     (map vnodes)
@@ -91,19 +97,21 @@
 (defn once
   [f]
   (flake/init!)
-  (mute (ensure-cluster!))
-  (prn :starting-nodes)
-  (mute (binding [*nodes* (start-nodes!)]
-          (try
-            (prn :starting-client)
-            (binding [*client* (client/client *nodes*)]
-              (try
-                (prn :running)
-                (f)
-                (finally
-                  (client/shutdown! *client*))))
-            (finally
-              (shutdown-nodes! *nodes*))))))
+  (with-zk [zk]
+    (mute (ensure-cluster! (admin zk)))
+    (prn :starting-nodes)
+    (mute (binding [*zk*    zk
+                    *nodes* (start-nodes! zk)]
+            (try
+              (prn :starting-client)
+              (binding [*client* (client/client *nodes*)]
+                (try
+                  (prn :running)
+                  (f)
+                  (finally
+                    (client/shutdown! *client*))))
+              (finally
+                (shutdown-nodes! *nodes*)))))))
 
 (defn each
   [f]
@@ -116,7 +124,7 @@
     (do
       (prn :repairing-cluster)
       (shutdown-nodes! *nodes*)
-      (binding [*nodes* (start-nodes!)]
+      (binding [*nodes* (start-nodes! *zk*)]
         (try
           (client/wipe! *client*)
           (f)
