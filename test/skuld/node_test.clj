@@ -107,8 +107,21 @@
 
 (defn each
   [f]
-  (client/wipe! *client*)
-  (f))
+  ; If any nodes were killed by the test, re-initialize the cluster before
+  ; proceeding.
+  (if (not-any? shutdown? *nodes*)
+    (do
+      (client/wipe! *client*)
+      (f))
+    (do
+      (prn :repairing-cluster)
+      (shutdown-nodes! *nodes*)
+      (binding [*nodes* (start-nodes!)]
+        (try
+          (client/wipe! *client*)
+          (f)
+          (finally
+            (shutdown-nodes! *nodes*)))))))
 
 (use-fixtures :once once)
 (use-fixtures :each each)

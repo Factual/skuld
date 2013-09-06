@@ -493,22 +493,30 @@
                                     :cluster cluster
                                     :instance {:host host :port port}})}))
 
+(defn shutdown?
+  [node]
+  (= :shutdown @(:vnodes node)))
+
 (defn shutdown!
   "Shuts down a node."
   [node]
-  (when-let [c (:clock-sync node)] (clock-sync/shutdown! c))
-  (when-let [aae (:aae node)]      (aae/shutdown! aae))
-  (when-let [net (:net node)]      (net/shutdown! net))
-  (when-let [p (:politics node)]   (politics/shutdown! p))
+  (locking node
+    (when-not (shutdown? node)
+      (when-let [c (:clock-sync node)] (clock-sync/shutdown! c))
+      (when-let [aae (:aae node)]      (aae/shutdown! aae))
+      (when-let [net (:net node)]      (net/shutdown! net))
+      (when-let [p (:politics node)]   (politics/shutdown! p))
 
-  (->> (select-keys node [:participant :controller])
-       vals
-       (remove nil?)
-       (map helix/disconnect!)
-       dorun)
+      (->> (select-keys node [:participant :controller])
+           vals
+           (remove nil?)
+           (map helix/disconnect!)
+           dorun)
 
-  (->> node
-       vnodes
-       vals
-       (pmap vnode/shutdown!)
-       dorun))
+      (->> node
+           vnodes
+           vals
+           (pmap vnode/shutdown!)
+           dorun)
+
+      (reset! (:vnodes node) :shutdown))))

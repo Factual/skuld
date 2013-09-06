@@ -22,28 +22,21 @@
 (use-fixtures :each each)
 
 (deftest claim-stress-test
-  (prn :electing)
   (elect! *nodes*)
-  (prn :elected)
 
   (let [n 100
         ids (->> (repeatedly (fn []
-                               (prn :enqueuing)
                                (client/enqueue! *client* {:w 3} {:data "sup"})))
                  (take n)
                  doall)]
-
-    (prn :enqueued)
 
     (is (not-any? nil? ids))
     (is (= n (client/count-tasks *client*)))
     ; Claim all extant IDs
     (let [claims (loop [claims {}]
-                   (prn :claiming)
                    (if-let [t (client/claim! *client* 100000)]
                      (do
                        ; Make sure we never double-claim
-                       (prn :claimed t)
                        (assert (not (get claims (:id t))))
                        (let [claims (assoc claims (:id t) t)]
                          (if (= (count ids) (count claims))
@@ -65,7 +58,6 @@
   
   ; Enqueue something and claim it.
   (let [id (client/enqueue! *client* {:w 3} {:data "meow"})
-        _ (prn :claiming)
         claim (client/claim! *client* 100000)]
     (is (= id (:id claim)))
 
@@ -105,14 +97,12 @@
                        (set/subset?
                          (set (preflist (first alive) id))
                          (set (map (comp net/id :net) replacements)))))
-        (prn (preflist (first alive) id))
         (Thread/sleep 1000))
 
       ; Elect a new cohort
       (elect! replacements)
 
       ; Verify that we cannot re-claim the element.
-      (prn :checking-claim-present)
       (is (<= 2 (->> replacements
                      (map vnodes)
                      (map vals)
