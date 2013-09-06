@@ -390,14 +390,26 @@
                                          :router @routerp
                                          :net net}))))
                 (catch Throwable t
-                  (locking *out* (debug t "bringing" part "online"))
+                  (warn t "bringing" part "online")
                   (throw t))))
 
     (:offline :DROPPED [part m c]
-              (vnode/shutdown! (get @vnodes part)))
+              (try
+                (locking vnodes
+                  (when-let [vnode (get @vnodes part)]
+                    (vnode/shutdown! vnode)
+                    (swap! vnodes dissoc part)))
+                (catch Throwable t
+                  (prn t "dropping" part)
+                  (throw t))))
 
     (:peer :offline [part m c]
-           (vnode/zombie! (get @vnodes part)))))
+           (try
+             (when-let [v (get @vnodes part)]
+               (vnode/zombie! v))
+             (catch Throwable t
+               (warn t "taking" part "offline")
+               (throw t))))))
 
 (defn node
   "Creates a new node with the given options.
