@@ -2,10 +2,8 @@
   (:use skuld.net
         clojure.test)
   (:import java.util.concurrent.CountDownLatch)
-  (:require [skuld.flake :as flake]
+  (:require skuld.flake-test
             [clojure.set :as set]))
-
-(flake/init!)
 
 (deftest solipsist
   (let [node (node {:host "127.0.0.1" :port 13000})

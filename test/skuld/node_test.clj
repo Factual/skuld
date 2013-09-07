@@ -8,7 +8,6 @@
   (:require [skuld.client  :as client]
             [skuld.admin   :as admin]
             [skuld.vnode   :as vnode]
-            [skuld.flake   :as flake]
             [skuld.curator :as curator]
             [skuld.net     :as net]
             [skuld.task    :as task]
@@ -16,10 +15,9 @@
             [skuld.politics :as politics]
             [skuld.logging :as logging]
             [clojure.set   :as set]
+            skuld.flake-test
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
-
-(flake/init!)
 
 (defn admin
   [zk]
@@ -96,7 +94,6 @@
 
 (defn once
   [f]
-  (flake/init!)
   (with-zk [zk]
     (mute (ensure-cluster! (admin zk)))
     (prn :starting-nodes)

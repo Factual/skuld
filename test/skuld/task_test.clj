@@ -2,9 +2,8 @@
   (:refer-clojure :exclude [merge])
   (:use skuld.task
         clojure.test)
-  (:require [skuld.flake :as flake]))
-
-(flake/init!)
+  (:require skuld.flake-test
+            [skuld.flake :as flake]))
 
 (deftest mergev-test
   (are [a b] (= (apply mergev a) b)

@@ -2,11 +2,8 @@
   (:use skuld.db.level
         skuld.db
         clojure.test)
-  (:require [skuld.flake :as flake]
+  (:require [skuld.flake-test :as flake]
             [skuld.task :as task]))
-
-
-(flake/init!)
 
 (def ^:dynamic *db*)
 

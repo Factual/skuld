@@ -6,6 +6,10 @@
   (:import (java.util Arrays)
            (com.google.common.primitives UnsignedBytes)))
 
+(in-ns 'skuld.flake)
+(def node-id (constantly (byte-array 6)))
+(in-ns 'skuld.flake-test)
+
 (init!)
 
 (deftest linear-time-test
