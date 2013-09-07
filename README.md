@@ -49,7 +49,6 @@ Major drawbacks include but are not limited to:
 
 - Losing all data on nodes when restarted
 - Performing an O(tasks) scan over all tasks for every claim.
-- A test suite which deadlocks or fails 95% of the time for unknown reasons
 - Merkle trees are O(n log n) in size, including a leaf node for every task
 - All sorts of poorly chosen, hardcoded timeouts and parameters
 - Task listing holds all tasks in memory
