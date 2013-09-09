@@ -18,6 +18,18 @@
       level
       (Level/toLevel (name level))))
 
+(def root-logger-name
+  org.slf4j.Logger/ROOT_LOGGER_NAME)
+
+(def root-logger
+  (LoggerFactory/getLogger root-logger-name))
+
+(defn get-logger
+  [logger-name]
+  (prn :get-logger logger-name)
+  (org.slf4j.LoggerFactory/getLogger
+    (or logger-name root-logger-name)))
+
 (def root-logger-context
   (.getLoggerContext root-logger))
 
@@ -29,17 +41,7 @@
   []
   (map (fn [logger] (.getName logger)) (all-loggers)))
 
-(def root-logger-name
-  org.slf4j.Logger/ROOT_LOGGER_NAME)
 
-(defn get-logger
-  [logger-name]
-  (prn :get-logger logger-name)
-  (org.slf4j.LoggerFactory/getLogger
-    (or logger-name root-logger-name)))
-
-(def root-logger
-  (LoggerFactory/getLogger root-logger-name))
 
 
 (defn set-level
