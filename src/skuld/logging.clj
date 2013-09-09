@@ -2,7 +2,8 @@
   "Configures logger"
   (:import (ch.qos.logback.classic
              Level
-             Logger)
+             Logger
+             LoggerContext)
            (org.slf4j
              LoggerFactory)
            (ch.qos.logback.classic.jul
@@ -18,19 +19,19 @@
       level
       (Level/toLevel (name level))))
 
-(def root-logger-name
+(def ^String root-logger-name
   org.slf4j.Logger/ROOT_LOGGER_NAME)
 
-(def root-logger
+(def ^Logger root-logger
   (LoggerFactory/getLogger root-logger-name))
 
-(defn get-logger
-  [logger-name]
+(defn ^Logger get-logger
+  [^String logger-name]
   (prn :get-logger logger-name)
-  (org.slf4j.LoggerFactory/getLogger
+  (LoggerFactory/getLogger
     (or logger-name root-logger-name)))
 
-(def root-logger-context
+(def ^LoggerContext root-logger-context
   (.getLoggerContext root-logger))
 
 (defn all-loggers
@@ -39,7 +40,7 @@
 
 (defn all-logger-names
   []
-  (map (fn [logger] (.getName logger)) (all-loggers)))
+  (map (fn [^Logger logger] (.getName logger)) (all-loggers)))
 
 
 
@@ -49,7 +50,7 @@
   (set-level \"skuld.node\", :debug)"
   ([level]
     (set-level nil level))
-  ([logger level]
+  ([^Logger logger level]
     (prn :set-level logger level)
     (.setLevel (get-logger logger) (level-for level))))
 
@@ -59,7 +60,7 @@
   (let [[logger-name & more] (flatten [logger-names])]
     (prn :with-level level logger-names)
     (if logger-name
-      `(let [logger# (get-logger ~logger-name)
+      `(let [^Logger logger# (get-logger ~logger-name)
              old-level# (.getLevel logger#)]
          (try
            (.setLevel logger# (level-for ~level))
@@ -70,13 +71,13 @@
 
 (defmacro mute
   "Turns off logging for all loggers the evaluation of body."
-  [body]
-  (with-level :off (all-logger-names) body))
+  [& body]
+  `(with-level :off (all-logger-names) ~@body))
 
 (defmacro suppress
   "Turns off logging for the evaluation of body."
   [loggers & body]
-  (with-level :off loggers body))
+  `(with-level :off ~loggers ~@body))
 
 (defn init
   []
