@@ -1,6 +1,5 @@
 (ns skuld.node-test
-  (:use [clj-helix.logging :only [mute]]
-        clojure.tools.logging
+  (:use clojure.tools.logging
         clojure.test
         skuld.zk-test
         skuld.util
@@ -95,9 +94,9 @@
 (defn once
   [f]
   (with-zk [zk]
-    (mute (ensure-cluster! (admin zk)))
+    (logging/mute (ensure-cluster! (admin zk)))
     (prn :starting-nodes)
-    (mute (binding [*zk*    zk
+    (logging/mute (binding [*zk*    zk
                     *nodes* (start-nodes! zk)]
             (try
               (prn :starting-client)
