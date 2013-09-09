@@ -17,6 +17,14 @@
                           (finally
                             (close! *db*))))))
 
+(deftest exists-test
+  (let [vnode {:host "localhost" :port 0 :partition "skuld-1" :ext "test"}]
+    (is (not (local-data? vnode)))
+    (path! vnode)
+    (is (local-data? vnode))
+    (destroy-data! vnode)
+    (is (not (local-data? vnode)))))
+
 (deftest merge-test
   (let [t (task/task {:data "meow"})]
     (merge-task! *db* t)

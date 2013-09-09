@@ -1,5 +1,6 @@
 (ns skuld.db
   "Database backend interface."
+  (:import (java.io File))
   (:use [potemkin :only [defprotocol+]])
   (:require [clojure.java.io :as io]))
 
@@ -16,15 +17,39 @@
     (wipe! [db]))
 
 (defn path
-  "Ensures the given data path exists and returns it. Options:
+  "Constructs a path name for storing data in a vnode. Options:
   
   :host
   :port
   :partition
   :ext"
   [{:keys [host port partition ext]}]
-  (let [path (io/file "data"
-                      (str host ":" port)
-                      (str partition "." ext))]
-    (io/make-parents path)
-    (str path)))
+  (-> "data"
+      (io/file (str host ":" port)
+               (str partition "." ext))
+      str))
+
+(defn path!
+  "Like path, but ensures the path exists."
+  [opts]
+  (let [p (path opts)]
+    (.mkdirs (io/file p))
+    p))
+
+(defn rm-rf! [path]
+  (let [f (fn [f ^File p]
+            (when (.isDirectory p)
+              (doseq [child (.listFiles p)]
+                (f f child)))
+            (io/delete-file p))]
+    (f f (io/file path))))
+
+(defn destroy-data!
+  "Removes all data for the given vnode."
+  [opts]
+  (rm-rf! (path opts)))
+
+(defn local-data?
+  "Is there local data for the given vnode?"
+  [opts]
+  (-> opts path io/file .exists))

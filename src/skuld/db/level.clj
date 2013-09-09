@@ -70,7 +70,7 @@
   :partition
   :data-dir"
   [opts]
-  (let [level (level/create-db (path (assoc opts :ext "level"))
+  (let [level (level/create-db (path! (assoc opts :ext "level"))
                                {:val-decoder #(and % (nippy/thaw %))
                                 :val-encoder #(and % (nippy/freeze %))})
         c (count (level/iterator level))]

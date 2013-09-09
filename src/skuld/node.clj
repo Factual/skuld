@@ -411,6 +411,10 @@
                (warn t "taking" part "offline")
                (throw t))))))
 
+(defn initialize-vnodes-from-disk
+  "Spins up a local zombie vnode for any local data."
+  [node])
+
 (defn node
   "Creates a new node with the given options.
 
