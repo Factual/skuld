@@ -55,10 +55,10 @@
   "Sets logging for the evaluation of body to the desired level."
   [level-name logger-names & body]
   `(let [loggers# (map get-logger (flatten [~logger-names]))
-         levels#  (doall (map #(.getLevel %) loggers#))
+         levels#  (doall (map #(.getLevel ^Logger %) loggers#))
          level#   (level-for ~level-name)]
      (try
-       (doseq [l# loggers#] (.setLevel l# level#))
+       (doseq [^Logger l# loggers#] (.setLevel l# level#))
        (do ~@body)
        (finally
          (dorun (map (fn [^Logger logger#
