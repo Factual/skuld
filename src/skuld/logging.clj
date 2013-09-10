@@ -54,17 +54,19 @@
 (defmacro with-level
   "Sets logging for the evaluation of body to the desired level."
   [level-name logger-names & body]
-  `(let [loggers# (map get-logger (flatten [~logger-names]))
-         levels#  (doall (map #(.getLevel ^Logger %) loggers#))
-         level#   (level-for ~level-name)]
+  `(let [level# (level-for ~level-name)
+         loggers-and-levels# ((->> [~logger-names]
+                                flatten
+                                (map get-logger)
+                                (map #(list % (.getLevel ^Logger %)))
+                                (remove (comp nil? second))))]
      (try
-       (doseq [^Logger l# loggers#] (.setLevel l# level#))
+       (doseq [[^Logger logger# orig-level#] loggers-and-levels#]
+         (.setLevel logger# level#))
        (do ~@body)
        (finally
-         (dorun (map (fn [^Logger logger#
-                          ^Level orig-level#]
-                       (.setLevel logger# orig-level#))
-                  loggers# levels#))))))
+         (doseq [[^Logger logger# orig-level#] loggers-and-levels#]
+           (.setLevel logger# orig-level#))))))
 
 (defmacro mute
   "Turns off logging for all loggers the evaluation of body."
@@ -81,7 +83,6 @@
   (let [context (.getLoggerContext root-logger)]
     (doto context
       .reset
-      (prn :context)
       (.addListener
         (doto (LevelChangePropagator.)
           (.setContext context)
@@ -90,7 +91,6 @@
       (doto (ConsoleAppender.)
         (.setName "console-appender")
         (.setContext context)
-        (prn :appender)
         (.start))
       )
     (set-level :info)))
