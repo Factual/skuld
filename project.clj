@@ -5,9 +5,14 @@
   :java-source-paths ["src/skuld/"]
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
+  :exclusions [[log4j]
+               [org.slf4j/slf4j-log4j12]]
   :dependencies [[org.clojure/clojure "1.5.1"]
                  [org.clojure/tools.cli "0.2.2"]
                  [org.clojure/tools.logging "0.2.3"]
+                 [ch.qos.logback/logback-classic "1.0.13"]
+                 [org.slf4j/jcl-over-slf4j "1.7.5"]
+                 [org.slf4j/log4j-over-slf4j "1.7.5"]
                  [factual/clj-helix "0.1.0"]
                  [io.netty/netty "4.0.0.Alpha8"]
                  [com.taoensso/nippy "2.1.0"]
