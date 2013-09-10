@@ -42,9 +42,6 @@
   []
   (map (fn [^Logger logger] (.getName logger)) (all-loggers)))
 
-
-
-
 (defn set-level
   "Set the level for the given logger, by string name. Use:
   (set-level \"skuld.node\", :debug)"
@@ -56,28 +53,28 @@
 
 (defmacro with-level
   "Sets logging for the evaluation of body to the desired level."
-  [level logger-names & body]
-  (let [[logger-name & more] (flatten [logger-names])]
-    (prn :with-level level logger-names)
-    (if logger-name
-      `(let [^Logger logger# (get-logger ~logger-name)
-             old-level# (.getLevel logger#)]
-         (try
-           (.setLevel logger# (level-for ~level))
-           (with-level ~level ~more ~@body)
-           (finally
-             (.setLevel logger# old-level#))))
-      `(do ~@body))))
+  [level-name logger-names & body]
+  `(let [loggers# (map get-logger (flatten [~logger-names]))
+         levels#  (doall (map #(.getLevel %) loggers#))
+         level#   (level-for ~level-name)]
+     (try
+       (doseq [l# loggers#] (.setLevel l# level#))
+       (do ~@body)
+       (finally
+         (dorun (map (fn [^Logger logger#
+                          ^Level orig-level#]
+                       (.setLevel logger# orig-level#))
+                  loggers# levels#))))))
 
 (defmacro mute
   "Turns off logging for all loggers the evaluation of body."
   [& body]
-  `(with-level :off (all-logger-names) ~@body))
+  (with-level :off (all-logger-names) ~@body))
 
 (defmacro suppress
   "Turns off logging for the evaluation of body."
   [loggers & body]
-  `(with-level :off ~loggers ~@body))
+  (with-level :off loggers ~@body))
 
 (defn init
   []
