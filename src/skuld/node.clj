@@ -102,7 +102,9 @@
         id (:id task)]
     (let [r (or (:w msg) 1)
           preflist (preflist node id)
-          _ (assert (<= r (count preflist)))
+          _ (assert (<= r (count preflist))
+                    (str "need " r " vnodes but only "
+                         (count preflist) " known in local preflist"))
           responses (net/sync-req! (:net node)
                                    preflist
                                    {:r r}
@@ -503,8 +505,21 @@
   (while (->> node
               all-partitions
               (map (partial peers node))
-              (some empty?))
-    (Thread/sleep 10))
+              (some (comp (partial > 2) count)))
+    (locking *out*
+      (prn (:port node) " preflists are " (->> node
+                                               all-partitions
+                                               (map #(vector % (peers node %)))
+                                               (into (sorted-map)))))
+    (Thread/sleep 1000))
+    
+  (locking *out*
+      (prn (:port node) " preflists are " (->> node
+                                               all-partitions
+                                               (map #(vector % (peers node %)))
+                                               (into (sorted-map)))))
+
+
   node)
 
 (defn controller
