@@ -486,7 +486,8 @@
               :politics     politics
               :participant  participant
               :controller   controller
-              :vnodes       vnodes}]
+              :vnodes       vnodes
+              :running      (atom true)}]
 
     ; Final startup sequence
     (start-local-vnodes! node)
@@ -543,7 +544,7 @@
 
 (defn shutdown?
   [node]
-  (= :shutdown @(:vnodes node)))
+  (-> node :running deref not))
 
 (defn shutdown!
   "Shuts down a node."
@@ -568,4 +569,4 @@
            (pmap vnode/shutdown!)
            dorun)
 
-      (reset! (:vnodes node) :shutdown))))
+      (reset! (:running node) false))))
