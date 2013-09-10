@@ -26,6 +26,7 @@
   :partition
   :state"
   [opts]
+  (prn "starting vnode" (net/id (:net opts)) (:partition opts))
   {:partition (:partition opts)
    :net       (:net opts)
    :router    (:router opts)

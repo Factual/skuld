@@ -10,6 +10,7 @@
             [skuld.task :as task]
             [skuld.curator :as curator]
             [skuld.politics :as politics]
+            [skuld.db :as db]
             [clj-helix.manager :as helix]
             clj-helix.admin
             clj-helix.fsm
@@ -373,6 +374,14 @@
                                 :upper-bound :R
                                 :transitions :offline}}}))
 
+(defn new-vnode
+  "Creates a new vnode for the given partition."
+  [node part]
+  (vnode/vnode {:partition part
+                :curator   (:curator node)
+                :router    (:router node)
+                :net       (:net node)}))
+
 (defn fsm
   "Compiles a new FSM to manage a vnodes map. Takes an atom of partitions to
   vnodes, a net node, and a promise of a router."
@@ -405,15 +414,31 @@
 
     (:peer :offline [part m c]
            (try
-             (when-let [v (get @vnodes part)]
-               (vnode/zombie! v))
+             (locking vnodes
+               (when-let [v (get @vnodes part)]
+                 (vnode/zombie! v)))
              (catch Throwable t
                (warn t "taking" part "offline")
                (throw t))))))
 
-(defn initialize-vnodes-from-disk
+(defn start-local-vnodes!
   "Spins up a local zombie vnode for any local data."
-  [node])
+  [node]
+  (let [vnodes (:vnodes node)]
+    (->> node
+         all-partitions
+         (map (fn [part]
+                (locking vnodes
+                  (when (and (not (get @vnodes part))
+                             (db/local-data? {:partition part
+                                              :host (:host node)
+                                              :port (:port node)
+                                              :ext "level"}))
+                    (prn (:port node) "Spooling up zombie vnode" part)
+                    (let [v (new-vnode node part)]
+                      (vnode/zombie! v)
+                      (swap! vnodes assoc part v))))))
+         dorun)))
 
 (defn node
   "Creates a new node with the given options.
@@ -461,9 +486,9 @@
               :controller   controller
               :vnodes       vnodes}]
 
+    ; Final startup sequence
+    (start-local-vnodes! node)
     (net/add-handler! net (handler node))
-
-    ; Start network node
     (net/start! net)
 
     node))
