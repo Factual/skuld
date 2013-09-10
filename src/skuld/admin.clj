@@ -19,6 +19,11 @@
    :max-partitions-per-node (get opts :max-partitions-per-node
                                  (get opts :partitions 1))})
 
+(defn shutdown!
+  "Shuts down an admin tool."
+  [admin]
+  (.close (:helix admin)))
+
 (defn destroy-cluster!
   [admin]
   (helix/drop-cluster (:helix admin)

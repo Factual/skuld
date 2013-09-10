@@ -16,4 +16,5 @@
      (try
        ~@body
        (finally
+         (prn :shutdown zk#)
          (.close zk#)))))

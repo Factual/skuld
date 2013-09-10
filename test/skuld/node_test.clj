@@ -94,7 +94,13 @@
 (defn once
   [f]
   (with-zk [zk]
-    (logging/mute (ensure-cluster! (admin zk)))
+    ; Set up cluster
+    (let [admin (admin zk)]
+      (try
+        (logging/mute (ensure-cluster! admin))
+        (admin/shutdown! admin)))
+
+    ; Set up nodes
     (prn :starting-nodes)
     (logging/mute (binding [*zk*    zk
                     *nodes* (start-nodes! zk)]
