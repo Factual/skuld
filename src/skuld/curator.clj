@@ -66,6 +66,11 @@
         .build)
     .start))
 
+(defn shutdown!
+  "Shuts down a curator client."
+  [^CuratorFramework curator]
+  (.close curator))
+
 (defonce ^CuratorFramework curator nil)
 
 (defn create!

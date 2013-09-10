@@ -535,6 +535,7 @@
       (when-let [aae (:aae node)]      (aae/shutdown! aae))
       (when-let [net (:net node)]      (net/shutdown! net))
       (when-let [p (:politics node)]   (politics/shutdown! p))
+      (when-let [c (:curator node)]    (curator/shutdown! c))
 
       (->> (select-keys node [:participant :controller])
            vals
