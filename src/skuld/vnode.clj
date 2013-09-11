@@ -26,7 +26,7 @@
   :partition
   :state"
   [opts]
-  (prn "starting vnode" (net/id (:net opts)) (:partition opts))
+  (info "starting vnode" (net/id (:net opts)) (:partition opts))
   {:partition (:partition opts)
    :net       (:net opts)
    :router    (:router opts)
@@ -189,12 +189,11 @@
                               state)))))
 
 (defn shutdown!
-  "Converts a zombie to state :dead. Destroys all data on the vnode."
+  "Converts a zombie to state :dead, and closes resources."
   [vnode]
   (locking vnode
     (when-not (= :dead @(:state vnode))
       (reset! (:state vnode) :dead)
-      (wipe! vnode)
       (db/close! (:db vnode)))))
 
 (defn majority-excluding-self

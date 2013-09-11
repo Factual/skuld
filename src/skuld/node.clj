@@ -393,6 +393,7 @@
     (:offline :peer [part m c]
               (try
                 (locking vnodes
+                  (info (:port net) part "coming online")
                   (if-let [existing (get vnodes part)]
                     (vnode/revive! existing)
                     (swap! vnodes assoc part
@@ -401,24 +402,26 @@
                                          :router @routerp
                                          :net net}))))
                 (catch Throwable t
-                  (fatal t "bringing" part "online"))))
+                  (fatal t (:port net) "bringing" part "online"))))
 
     (:offline :DROPPED [part m c]
               (try
                 (locking vnodes
+                  (info (:port net) part "dropped")
                   (when-let [vnode (get @vnodes part)]
                     (vnode/shutdown! vnode)
                     (swap! vnodes dissoc part)))
                 (catch Throwable t
-                  (fatal t "dropping" part))))
+                  (fatal t (:port net) "dropping" part))))
 
     (:peer :offline [part m c]
            (try
              (locking vnodes
+               (info (:port net) part "going offline")
                (when-let [v (get @vnodes part)]
                  (vnode/zombie! v)))
              (catch Throwable t
-               (fatal t "taking" part "offline"))))))
+               (fatal t (:port net) "taking" part "offline"))))))
 
 (defn start-local-vnodes!
   "Spins up a local zombie vnode for any local data."
@@ -433,7 +436,7 @@
                                               :host (:host node)
                                               :port (:port node)
                                               :ext "level"}))
-                    (prn (:port node) "Spooling up zombie vnode" part)
+                    (info (:port node) "spooling up zombie vnode" part)
                     (let [v (new-vnode node part)]
                       (vnode/zombie! v)
                       (swap! vnodes assoc part v))))))
@@ -560,10 +563,11 @@
            (map helix/disconnect!)
            dorun)
 
-      (->> node
-           vnodes
-           vals
-           (pmap vnode/shutdown!)
-           dorun)
+      (locking (:vnodes node)
+        (->> node
+             vnodes
+             vals
+             (pmap vnode/shutdown!)
+             dorun))
 
       (reset! (:running node) false))))
