@@ -102,18 +102,23 @@
 
     ; Set up nodes
     (prn :starting-nodes)
-    (logging/mute (binding [*zk*    zk
-                    *nodes* (start-nodes! zk)]
-            (try
-              (prn :starting-client)
-              (binding [*client* (client/client *nodes*)]
-                (try
-                  (prn :running)
-                  (f)
-                  (finally
-                    (client/shutdown! *client*))))
-              (finally
-                (shutdown-nodes! *nodes*)))))))
+    (logging/suppress [#"^org\.apache\.helix"
+                       #"^org\.apache\.zookeeper"
+                       #"^org\.apache\.curator"
+                       #"^org\.I0Itec\.zkclient"
+                       "skuld.vnode"]
+                      (binding [*zk*    zk
+                                *nodes* (start-nodes! zk)]
+                        (try
+                          (prn :starting-client)
+                          (binding [*client* (client/client *nodes*)]
+                            (try
+                              (prn :running)
+                              (f)
+                              (finally
+                                (client/shutdown! *client*))))
+                          (finally
+                            (shutdown-nodes! *nodes*)))))))
 
 (defn each
   [f]

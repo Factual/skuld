@@ -1,5 +1,5 @@
 (ns skuld.logging
-  "Configures logger"
+  "Configures loggers"
   (:import (ch.qos.logback.classic
              Level
              Logger
@@ -11,7 +11,6 @@
              LevelChangePropagator)
            (ch.qos.logback.core
              ConsoleAppender)))
-
 
 (defn level-for
   "Get the level for a given symbol"
@@ -26,47 +25,73 @@
 (def ^Logger root-logger
   (LoggerFactory/getLogger root-logger-name))
 
-(defn ^Logger get-logger
-  [^String logger-name]
-  (LoggerFactory/getLogger
-    (or logger-name root-logger-name)))
+(defn logger-name
+  "The name of a logger."
+  [^Logger logger]
+  (.getName logger))
 
-(def ^LoggerContext root-logger-context
-  (.getLoggerContext root-logger))
+(defn level
+  "The level of a logger."
+  [^Logger logger]
+  (.getLevel logger))
 
 (defn all-loggers
+  "Returns a list of all registered Loggers."
   []
   (.getLoggerList root-logger-context))
 
 (defn all-logger-names
+  "Returns the names of all loggers."
   []
-  (map (fn [^Logger logger] (.getName logger)) (all-loggers)))
+  (map logger-name (all-loggers)))
+
+(defn ^Logger get-loggers
+  "Returns a singleton list containing a logger for a string or, if given a
+  regular expression, a list of all loggers finding matching names."
+  [logger-pattern]
+  (cond
+    (nil? logger-pattern)
+    (list root-logger)
+
+    (string? logger-pattern)
+    (list (LoggerFactory/getLogger ^String logger-pattern))
+
+    :else (filter (comp (partial re-find logger-pattern) logger-name)
+                  (all-loggers))))
+
+(defn get-logger
+  [logger-pattern]
+  (first (get-loggers logger-pattern)))
+
+(def ^LoggerContext root-logger-context
+  (.getLoggerContext root-logger))
 
 (defn set-level
   "Set the level for the given logger, by string name. Use:
-  (set-level \"skuld.node\", :debug)"
+
+  (set-level (get-logger \"skuld.node\") :debug)"
   ([level]
-    (set-level nil level))
+   (set-level root-logger level))
   ([^Logger logger level]
-    (.setLevel (get-logger logger) (level-for level))))
+    (.setLevel logger (level-for level))))
 
 (defmacro with-level
   "Sets logging for the evaluation of body to the desired level."
-  [level-name logger-names & body]
-  `(let [level# (level-for ~level-name)
-         root-logger-level# (.getLevel root-logger)
-         loggers-and-levels# (doall
-                               (->> [~logger-names]
-                                flatten
-                                (map get-logger)
-                                (map #(list % (or (.getLevel ^Logger %) root-logger-level#)))))]
+  [level-name logger-patterns & body]
+  `(let [level#               (level-for ~level-name)
+         root-logger-level#   (level root-logger)
+         loggers-and-levels#  (doall
+                                (->> (list ~logger-patterns)
+                                     flatten
+                                     (mapcat get-loggers)
+                                     (map #(list % (or (level %)
+                                                       root-logger-level#)))))]
      (try
-       (doseq [[^Logger logger# orig-level#] loggers-and-levels#]
-         (.setLevel logger# level#))
+       (doseq [[logger# _#] loggers-and-levels#]
+         (set-level logger# level#))
        (do ~@body)
        (finally
-         (doseq [[^Logger logger# orig-level#] loggers-and-levels#]
-           (.setLevel logger# orig-level#))))))
+         (dorun (map (partial apply set-level) loggers-and-levels#))))))
 
 (defmacro mute
   "Turns off logging for all loggers the evaluation of body."
