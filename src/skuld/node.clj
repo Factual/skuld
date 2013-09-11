@@ -104,7 +104,7 @@
           preflist (preflist node id)
           _ (assert (<= r (count preflist))
                     (str "need " r " vnodes but only "
-                         (count preflist) " known in local preflist"))
+                         (pr-str preflist) " known in local preflist"))
           responses (net/sync-req! (:net node)
                                    preflist
                                    {:r r}
@@ -401,8 +401,7 @@
                                          :router @routerp
                                          :net net}))))
                 (catch Throwable t
-                  (warn t "bringing" part "online")
-                  (throw t))))
+                  (fatal t "bringing" part "online"))))
 
     (:offline :DROPPED [part m c]
               (try
@@ -411,8 +410,7 @@
                     (vnode/shutdown! vnode)
                     (swap! vnodes dissoc part)))
                 (catch Throwable t
-                  (prn t "dropping" part)
-                  (throw t))))
+                  (fatal t "dropping" part))))
 
     (:peer :offline [part m c]
            (try
@@ -420,8 +418,7 @@
                (when-let [v (get @vnodes part)]
                  (vnode/zombie! v)))
              (catch Throwable t
-               (warn t "taking" part "offline")
-               (throw t))))))
+               (fatal t "taking" part "offline"))))))
 
 (defn start-local-vnodes!
   "Spins up a local zombie vnode for any local data."
