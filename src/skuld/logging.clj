@@ -25,6 +25,9 @@
 (def ^Logger root-logger
   (LoggerFactory/getLogger root-logger-name))
 
+(def ^LoggerContext root-logger-context
+  (.getLoggerContext root-logger))
+
 (defn logger-name
   "The name of a logger."
   [^Logger logger]
@@ -62,9 +65,6 @@
 (defn get-logger
   [logger-pattern]
   (first (get-loggers logger-pattern)))
-
-(def ^LoggerContext root-logger-context
-  (.getLoggerContext root-logger))
 
 (defn set-level
   "Set the level for the given logger, by string name. Use:
