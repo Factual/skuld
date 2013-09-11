@@ -394,7 +394,7 @@
               (try
                 (locking vnodes
                   (info (:port net) part "coming online")
-                  (if-let [existing (get vnodes part)]
+                  (if-let [existing (get @vnodes part)]
                     (vnode/revive! existing)
                     (swap! vnodes assoc part
                            (vnode/vnode {:partition part
@@ -507,18 +507,16 @@
               all-partitions
               (map (partial peers node))
               (some (comp (partial > 2) count)))
-    (locking *out*
-      (prn (:port node) " preflists are " (->> node
+    (debug (:port node) " preflists are " (->> node
                                                all-partitions
                                                (map #(vector % (peers node %)))
-                                               (into (sorted-map)))))
+                                               (into (sorted-map))))
     (Thread/sleep 1000))
-    
-  (locking *out*
-      (prn (:port node) " preflists are " (->> node
-                                               all-partitions
-                                               (map #(vector % (peers node %)))
-                                               (into (sorted-map)))))
+
+  (debug (:port node) " preflists are " (->> node
+                                             all-partitions
+                                             (map #(vector % (peers node %)))
+                                             (into (sorted-map))))
 
 
   node)
