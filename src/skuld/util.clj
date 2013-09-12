@@ -80,3 +80,14 @@
           (concat (repeat (- idx c) nil)
                   (list value))
           vec))))
+
+(defmacro compare+
+  "Expands into a comparison between a and b on the basis of function f1, then
+  f2, etc."
+  [a b f & fs]
+  (if (empty? fs)
+    `(compare (~f ~a) (~f ~b))
+    `(let [x# (compare (~f ~a) (~f ~b))]
+       (if-not (zero? x#)
+         x#
+         (compare+ ~a ~b ~@fs)))))
