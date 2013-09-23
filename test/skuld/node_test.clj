@@ -101,7 +101,6 @@
         (admin/shutdown! admin)))
 
     ; Set up nodes
-    (prn :starting-nodes)
     (logging/suppress [#"^org\.apache\.helix"
                        #"^org\.apache\.zookeeper"
                        #"^org\.apache\.curator"
@@ -110,10 +109,8 @@
                       (binding [*zk*    zk
                                 *nodes* (start-nodes! zk)]
                         (try
-                          (prn :starting-client)
                           (binding [*client* (client/client *nodes*)]
                             (try
-                              (prn :running)
                               (f)
                               (finally
                                 (client/shutdown! *client*))))
@@ -129,7 +126,7 @@
       (client/wipe! *client*)
       (f))
     (do
-      (prn :repairing-cluster)
+      (info :repairing-cluster)
       (shutdown-nodes! *nodes*)
       (binding [*nodes* (start-nodes! *zk*)]
         (try
@@ -184,6 +181,9 @@
             :data "hi there"}))))
 
 (deftest count-test
+  ; We need leaders for queue counts to work.
+  (elect! *nodes*)
+
   ; Enqueue a few tasks
   (let [n 10]
     (dotimes [i n]
