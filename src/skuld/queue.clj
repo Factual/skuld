@@ -4,7 +4,11 @@
   
   Our general strategy with this queue is to be approximately consistent. If
   claim fails, come back and get another task. If a task is missing from this
-  queue, AAE will recover it when it does a scan over the DB."
+  queue, AAE will recover it when it does a scan over the DB.
+  
+  There's one queue per node. That queue is a rough approximation of all tasks
+  which could be claimed on the local node--e.g. it contains only tasks for
+  which the local node has a leader vnode."
   (:import (java.util.concurrent TimeUnit
                                  ConcurrentSkipListSet))
   (:use [skuld.util :exclude [update!]]

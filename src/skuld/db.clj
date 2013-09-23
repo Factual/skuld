@@ -10,7 +10,7 @@
     (unclaimed [db])
     (count-tasks [db])
     (get-task    [db ^Bytes id])
-    (claim-task! [db ^Bytes dt]
+    (claim-task! [db ^Bytes id dt]
                  [db ^Bytes id i claim])
     (merge-task! [db task])
     (close! [db])

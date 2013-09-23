@@ -142,6 +142,7 @@
                                  {:type :get-task-local
                                   :id   id})
         acks (remove :error responses)
+        _ (info responses)
         task (->> responses (map :task) (reduce task/merge))]
     (if (<= r (count acks))
       {:n    (count acks)
@@ -254,36 +255,38 @@
 (defn count-queue
   "Estimates the number of enqueued tasks."
   [node msg]
-  {:count (->> {:type :count-queue-local}
-               (coverage node)
-               vals
-               (reduce +))})
+  ; Issue requests to all nodes for their local counts
+  (let [peers (peers node)]
+    {:count (->> (net/sync-req! (:net node) peers {:r (count peers)}
+                                {:type :count-queue-local})
+                 (map :count)
+                 (reduce +))}))
 
 (defn count-queue-local
   "Estimates the number of enqueued tasks on this node."
   [node msg]
-  ; We have to split out the queue into per-partition counts.
-  {:partitions (->> (:queue node)
-                    (reduce (fn [m task]
-                              (let [k (partition-name node (:id task))]
-                                (if-let [v (get m k)]
-                                  (assoc! m k (inc v))
-                                  (assoc! m k 1))))
-                            (transient {}))
-                    persistent!)})
+  {:count (count (:queue node))})
 
 (defn claim-local!
   "Tries to claim a task from a local vnode."
   [node msg]
-  {:task
-   (->> node
-        vnodes
-        vals
-        (filter vnode/leader?)
-        (some (fn [vnode]
-                (try
-                  (vnode/claim! vnode (or (:dt msg) 10000))
-                  (catch Throwable t nil)))))})
+  ; Find the next task
+  (let [task (when-let [id (:id (queue/poll! (:queue node)))]
+               ; Find vnode for this task
+               (let [vnode (vnode node (partition-name node id))]
+                 (if-not vnode
+                   :retry
+
+                   ; Claim task from vnode
+                   (try
+                     (vnode/claim! vnode id (or (:dt msg) 10000))
+                     (catch Throwable t
+                       (warn t "caught while claiming" id "from vnode")
+                       :retry)))))]
+
+    (if (not= :retry task)
+      {:task task}
+      (recur node msg))))
 
 (defn claim!
   "Tries to claim a task."

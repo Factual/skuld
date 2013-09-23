@@ -402,7 +402,8 @@
   "Takes a task and merges it into this vnode."
   [vnode task]
   (db/merge-task! (:db vnode) task)
-  (queue/update! (:queue vnode) task))
+  (when (leader? vnode)
+    (queue/update! (:queue vnode) task)))
 
 (defn get-task
   "Returns a specific task by ID."
@@ -466,9 +467,9 @@
       {:error (.getMessage e)})))
 
 (defn claim!
-  "Picks a task from this vnode and claims it for dt milliseconds. Returns the
+  "Claims a particular task ID from this vnode, for dt milliseconds. Returns the
   claimed task."
-  [vnode dt]
+  [vnode task-id dt]
   (let [state     (state vnode)
         cur-epoch (:epoch state)
         cohort    (:cohort state)
@@ -483,7 +484,7 @@
       (throw (IllegalStateException. "can't initiate claim: not a leader.")))
 
     ; Attempt to claim a task locally.
-    (when-let [task (db/claim-task! (:db vnode) dt)]
+    (when-let [task (db/claim-task! (:db vnode) task-id dt)]
       (let [; Get claim details
             i     (dec (count (:claims task)))
             claim (nth (:claims task) i)

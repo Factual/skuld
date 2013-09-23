@@ -6,13 +6,16 @@
 
 (def interval
   "How long to sleep between scanning runs, in ms"
-  10000)
+  1000)
 
 (defn scan!
   "Scans over all tasks in a vnode."
   [queue vnode]
-  (doseq [task (vnode/tasks vnode)]
-    (queue/update! queue task)))
+  (let [leader? (vnode/leader? vnode)]
+    (doseq [task (vnode/tasks vnode)]
+      ; Ensure the task is in the queue if this vnode is a leader.
+      (when leader?
+        (queue/update! queue task)))))
 
 (defn service
   "Starts a new scanning service. Takes an atom wrapping a map of partitions to
@@ -29,7 +32,11 @@
                  (map (partial scan! queue))
                  dorun)
             (catch Throwable t
-              (warn t "queue refiller caught"))))))
+              (warn t "queue refiller caught")))
+
+          (when (deref running interval true)
+            (recur)))))
+
     running))
 
 (defn shutdown!

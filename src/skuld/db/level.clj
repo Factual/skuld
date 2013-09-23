@@ -21,13 +21,9 @@
   (get-task [db task-id]
     (level/get level (.bytes ^Bytes task-id)))
 
-  (claim-task! [db dt]
+  (claim-task! [db task-id dt]
     (locking db
-      (when-let [task (->> db
-                           tasks
-                           (remove task/claimed?)
-                           (remove task/completed?)
-                           first)]
+      (when-let [task (get-task db task-id)]
         (let [claimed (task/claim task dt)]
           (level/put level
                      (.bytes ^Bytes (:id task))

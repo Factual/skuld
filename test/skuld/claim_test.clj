@@ -43,6 +43,10 @@
       
       ; But after the buffer has elapsed, good to go. 
       (Thread/sleep 500)
+
+      ; Let the scanner run too. Ugh, hack hack hack.
+      (Thread/sleep 2000)
+
       (let [t (client/claim! *client* 1000)]
         (is (= id (:id t)))
         (is (= 2 (count (:claims t))))
@@ -65,5 +69,3 @@
       ; Can't re-claim.
       (Thread/sleep 2)
       (is (nil? (client/claim! *client* 100))))))
-
-
