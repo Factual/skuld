@@ -2,19 +2,21 @@
   "A single node in the Skuld cluster. Manages any number of vnodes."
   (:use skuld.util
         clojure.tools.logging)
-  (:require [skuld.vnode :as vnode]
-            [skuld.net :as net]
-            [skuld.flake :as flake]
-            [skuld.clock-sync :as clock-sync]
-            [skuld.aae :as aae]
-            [skuld.task :as task]
-            [skuld.curator :as curator]
-            [skuld.politics :as politics]
-            [skuld.db :as db]
-            [clj-helix.manager :as helix]
+  (:require [clj-helix.manager :as helix]
             clj-helix.admin
             clj-helix.fsm
-            [clj-helix.route :as route])
+            [clj-helix.route :as route]
+            [skuld.aae :as aae]
+            [skuld.clock-sync :as clock-sync]
+            [skuld.curator :as curator]
+            [skuld.db :as db]
+            [skuld.flake :as flake]
+            [skuld.net :as net]
+            [skuld.politics :as politics]
+            [skuld.queue :as queue]
+            [skuld.scanner :as scanner]
+            [skuld.task :as task]
+            [skuld.vnode :as vnode])
   (:import (java.util Arrays)
            com.aphyr.skuld.Bytes))
 
@@ -249,6 +251,27 @@
                        {}
                        (:partitions msg))})
 
+(defn count-queue
+  "Estimates the number of enqueued tasks."
+  [node msg]
+  {:count (->> {:type :count-queue-local}
+               (coverage node)
+               vals
+               (reduce +))})
+
+(defn count-queue-local
+  "Estimates the number of enqueued tasks on this node."
+  [node msg]
+  ; We have to split out the queue into per-partition counts.
+  {:partitions (->> (:queue node)
+                    (reduce (fn [m task]
+                              (let [k (partition-name node (:id task))]
+                                (if-let [v (get m k)]
+                                  (assoc! m k (inc v))
+                                  (assoc! m k 1))))
+                            (transient {}))
+                    persistent!)})
+
 (defn claim-local!
   "Tries to claim a task from a local vnode."
   [node msg]
@@ -354,6 +377,8 @@
        :get-task-local     get-task-local
        :count-tasks        count-tasks
        :count-tasks-local  count-tasks-local
+       :count-queue        count-queue
+       :count-queue-local  count-queue-local
        :list-tasks         list-tasks
        :list-tasks-local   list-tasks-local
        :claim              claim!
@@ -382,12 +407,13 @@
   (vnode/vnode {:partition part
                 :curator   (:curator node)
                 :router    (:router node)
+                :queue     (:queue node)
                 :net       (:net node)}))
 
 (defn fsm
   "Compiles a new FSM to manage a vnodes map. Takes an atom of partitions to
   vnodes, a net node, and a promise of a router."
-  [vnodes curator net routerp]
+  [vnodes curator net routerp queue]
   (clj-helix.fsm/fsm
     fsm-def
     (:offline :peer [part m c]
@@ -400,6 +426,7 @@
                            (vnode/vnode {:partition part
                                          :curator curator
                                          :router @routerp
+                                         :queue queue
                                          :net net}))))
                 (catch Throwable t
                   (fatal t (:port net) "bringing" part "online"))))
@@ -456,38 +483,42 @@
         port    (get opts :port 13000)
         cluster (get opts :cluster :skuld)
         vnodes  (atom {})
-        net         (net/node {:host host
-                               :port port})
-        routerp  (promise)
-        fsm         (fsm vnodes curator net routerp)
+        queue   (queue/queue)
+        net     (net/node {:host host
+                           :port port})
+        routerp (promise)
+        fsm     (fsm vnodes curator net routerp queue)
 
         ; Initialize services
-        controller  (helix/controller {:zookeeper zk
-                                       :cluster cluster
-                                       :instance {:host host :port port}})
-        participant (helix/participant {:zookeeper zk
-                                        :cluster cluster
-                                        :instance {:host host :port port}
-                                        :fsm fsm})
-        router      (clj-helix.route/router! participant)
-        _           (deliver routerp router)
-        clock-sync  (clock-sync/service net router vnodes)
-        aae         (aae/service net router vnodes)
-        politics    (politics/service vnodes)
+        controller    (helix/controller {:zookeeper zk
+                                         :cluster cluster
+                                         :instance {:host host :port port}})
+        participant   (helix/participant {:zookeeper zk
+                                          :cluster cluster
+                                          :instance {:host host :port port}
+                                          :fsm fsm})
+        router        (clj-helix.route/router! participant)
+        _             (deliver routerp router)
+        clock-sync    (clock-sync/service net router vnodes)
+        aae           (aae/service net router vnodes)
+        politics      (politics/service vnodes)
+        scanner       (scanner/service vnodes queue)
 
         ; Construct node
-        node {:host         host
-              :port         port
-              :net          net
-              :curator      curator
-              :router       router
-              :clock-sync   clock-sync
-              :aae          aae
-              :politics     politics
-              :participant  participant
-              :controller   controller
-              :vnodes       vnodes
-              :running      (atom true)}]
+        node {:host           host
+              :port           port
+              :net            net
+              :curator        curator
+              :router         router
+              :clock-sync     clock-sync
+              :aae            aae
+              :politics       politics
+              :participant    participant
+              :controller     controller
+              :vnodes         vnodes
+              :queue          queue
+              :scanner        scanner
+              :running        (atom true)}]
 
     ; Final startup sequence
     (start-local-vnodes! node)
@@ -554,6 +585,7 @@
       (when-let [net (:net node)]      (net/shutdown! net))
       (when-let [p (:politics node)]   (politics/shutdown! p))
       (when-let [c (:curator node)]    (curator/shutdown! c))
+      (when-let [s (:scanner node)]    (scanner/shutdown! s))
 
       (->> (select-keys node [:participant :controller])
            vals

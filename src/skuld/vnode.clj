@@ -8,6 +8,7 @@
             [skuld.net        :as net]
             [skuld.flake      :as flake]
             [skuld.curator    :as curator]
+            [skuld.queue      :as queue]
             [clj-helix.route  :as route]
             [clojure.set      :as set])
   (:import com.aphyr.skuld.Bytes))
@@ -30,6 +31,7 @@
   {:partition (:partition opts)
    :net       (:net opts)
    :router    (:router opts)
+   :queue     (:queue opts)
    :db        (level/open {:partition (:partition opts)
                            :host      (:host (:net opts))
                            :port      (:port (:net opts))})
@@ -399,7 +401,8 @@
 (defn merge-task!
   "Takes a task and merges it into this vnode."
   [vnode task]
-  (db/merge-task! (:db vnode) task))
+  (db/merge-task! (:db vnode) task)
+  (queue/update! (:queue vnode) task))
 
 (defn get-task
   "Returns a specific task by ID."
@@ -454,7 +457,8 @@
       (assert (not (zombie? vnode)))
       (if (= (:epoch msg) (epoch vnode))
         (do
-          (db/claim-task! (:db vnode) id i claim)
+          (->> (db/claim-task! (:db vnode) id i claim)
+               (queue/update! (:queue vnode)))
           {})
         {:error (str "leader epoch " epoch
                      " does not match local epoch " (epoch vnode))}))

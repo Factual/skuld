@@ -7,7 +7,8 @@
   queue, AAE will recover it when it does a scan over the DB."
   (:import (java.util.concurrent TimeUnit
                                  ConcurrentSkipListSet))
-  (:use skuld.util)
+  (:use [skuld.util :exclude [update!]]
+        clojure.tools.logging)
   (:require [skuld.task :as task]))
 
 (defprotocol Queue
@@ -27,8 +28,11 @@
 (extend-type ConcurrentSkipListSet
   Queue
   (update! [q task]
-    (when-not (or (task/claimed? task)
-                  (task/completed? task))
+    (if (or (nil? task)
+            (task/claimed? task)
+            (task/completed? task))
+      (.remove q (Task. (:id task)
+                        (:priority task)))
       (.add q (Task. (:id task)
                      (:priority task)))))
 

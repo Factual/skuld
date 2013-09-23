@@ -189,8 +189,9 @@
     (dotimes [i n]
       (client/enqueue! *client* {:w 3} {:data "sup"}))
 
-    (is (= n (client/count-tasks *client*)))))
+    (is (= n (client/count-tasks *client*)))
 
+    (is (= n (client/count-queue *client*)))))
 
 (deftest list-tasks-test
   ; Enqueue

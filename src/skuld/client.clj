@@ -74,6 +74,11 @@
   [client]
   (:count (sync-req! client {} {:type :count-tasks})))
 
+(defn count-queue
+  "Returns a count of how many tasks are claimable."
+  [client]
+  (:count (sync-req! client {} {:type :count-queue})))
+
 (defn list-tasks
   "Returns a list of tasks."
   [client]
