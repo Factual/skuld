@@ -24,24 +24,24 @@
   (let [running (promise)]
     ; Periodically emit heartbeats to peers
     (future
-      (Thread/sleep 10000)
-      (loop []
-        (try
-          (->> vnodes
-               deref
-               keys
-               (mapcat #(route/instances router :skuld % :peer))
-               set
-               (map (fn [peer]
-                      (net/send! net peer {:type :clock-sync
-                                           :node (select-keys net [:host :port])
-                                           :time (flake/linear-time)})))
-               dorun)
-          (catch Throwable t
-            (warn t "clock-sync caught")))
-        
-        (when (deref running 10000 true)
-          (recur))))
+      (when (deref running 10000 true)
+        (loop []
+          (try
+            (->> vnodes
+                 deref
+                 keys
+                 (mapcat #(route/instances router :skuld % :peer))
+                 set
+                 (map (fn [peer]
+                        (net/send! net peer {:type :clock-sync
+                                             :node (select-keys net [:host :port])
+                                             :time (flake/linear-time)})))
+                 dorun)
+            (catch Throwable t
+              (warn t "clock-sync caught")))
+
+          (when (deref running 10000 true)
+            (recur)))))
 
     running))
 
