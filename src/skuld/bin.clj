@@ -4,7 +4,8 @@
         clojure.tools.logging)
   (:require [skuld.admin :as admin]
             [skuld.node :as node]
-            [skuld.flake :as flake])
+            [skuld.flake :as flake]
+            [skuld.http])
   (:import (sun.misc Signal SignalHandler))
   (:gen-class))
 
