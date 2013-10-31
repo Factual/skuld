@@ -20,6 +20,14 @@
   (:import (java.util Arrays)
            com.aphyr.skuld.Bytes))
 
+; DEAL WITH IT
+; (circular deps)
+(in-ns 'skuld.http)
+(clojure.core/declare service)
+(clojure.core/declare shutdown!)
+(in-ns 'skuld.node)
+
+
 (defn vnodes
   "Returns a map of partitions to vnodes for a node."
   [node]
@@ -521,7 +529,11 @@
               :vnodes         vnodes
               :queue          queue
               :scanner        scanner
-              :running        (atom true)}]
+              :running        (atom true)}
+
+        ; Initialize HTTP service
+        http (skuld.http/service node (+ port 100))
+        node (assoc node :http http)]
 
     ; Final startup sequence
     (start-local-vnodes! node)
@@ -589,6 +601,7 @@
       (when-let [p (:politics node)]   (politics/shutdown! p))
       (when-let [c (:curator node)]    (curator/shutdown! c))
       (when-let [s (:scanner node)]    (scanner/shutdown! s))
+      (when-let [h (:http node)]       (skuld.http/shutdown! h))
 
       (->> (select-keys node [:participant :controller])
            vals

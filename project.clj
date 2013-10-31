@@ -21,7 +21,9 @@
                  [potemkin "0.3.0"]
                  [merkle "0.1.0"]
                  [org.apache.curator/curator-recipes "2.0.1-incubating"]
-                 [factual/clj-leveldb "0.1.0"]]
+                 [factual/clj-leveldb "0.1.0"]
+                 [clout "1.1.0"]
+                 [ring "1.2.1"]]
   :jvm-opts ^:replace ["-server"]
   :warn-on-reflection true
   :profiles {:dev {:dependencies [[criterium "0.4.1"]
