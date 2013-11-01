@@ -14,6 +14,7 @@
             [skuld.politics :as politics]
             [skuld.logging :as logging]
             [clojure.set   :as set]
+            skuld.http
             skuld.flake-test
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))

@@ -532,7 +532,7 @@
               :running        (atom true)}
 
         ; Initialize HTTP service
-        http (skuld.http/service node (+ port 100))
+        http (skuld.http/service node (+ port 1000))
         node (assoc node :http http)]
 
     ; Final startup sequence
