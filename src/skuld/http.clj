@@ -5,20 +5,40 @@
             [skuld.node :as node])
   (:import org.eclipse.jetty.server.Server))
 
-(defn make-handler
+(defn- http-response
+  "
+  Given a status and body and optionally a headers map, returns a ring
+  response.
+  "
+  [status body & [headers]]
+  {:status status
+   :headers (or headers {})
+   :body body})
+
+;; TODO: ensure proper request method per route
+(defn- make-handler
+  "
+  GIven a node, constructs the handler function. Returns a response map.
+  "
   [node]
   (fn [req]
     (condp route-matches req
-      "/list_tasks" (node/list-tasks node {}))))
+      "/list_tasks" (http-response 200 (node/list-tasks node {})))))
 
 (defn service
+  "
+  Given a node and port, constructs a Jetty instance.
+  "
   [node port]
   (let [handler (make-handler node)
-        jetty   (run-jetty (fn [] {}) {:host (:host node)
-                                       :port port
-                                       :join? false})]
+        jetty   (run-jetty handler {:host (:host node)
+                                    :port port
+                                    :join? false})]
     jetty))
 
 (defn shutdown!
+  "
+  Stops a given Jetty instance.
+  "
   [^Server jetty]
   (.stop jetty))
