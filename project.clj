@@ -25,7 +25,6 @@
                  [clout "1.1.0"]
                  [ring/ring-jetty-adapter "1.2.1"]]
   :jvm-opts ^:replace ["-server"]
-  :warn-on-reflection true
   :profiles {:dev {:dependencies [[criterium "0.4.1"]
                                   [com.google.guava/guava "14.0.1"]
                                   [org.apache.curator/curator-test "2.0.1-incubating"]]}}
@@ -33,4 +32,5 @@
                                              (:time x)
                                              (:bench x))))
                    :focus :focus
-                   :bench :bench})
+                   :bench :bench}
+  :global-vars {*warn-on-reflection* true})
