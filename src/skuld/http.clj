@@ -24,6 +24,7 @@
 (defn service
   "Given a node and port, constructs a Jetty instance."
   [node port]
+  (info "Starting HTTP server on" (str (:host node) ":" port))
   (let [handler (make-handler node)
         jetty   (run-jetty handler {:host (:host node)
                                     :port port
