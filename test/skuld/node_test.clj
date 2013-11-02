@@ -4,16 +4,17 @@
         skuld.zk-test
         skuld.util
         skuld.node)
-  (:require [skuld.client  :as client]
-            [skuld.admin   :as admin]
-            [skuld.vnode   :as vnode]
-            [skuld.curator :as curator]
-            [skuld.net     :as net]
-            [skuld.task    :as task]
-            [skuld.aae     :as aae]
-            [skuld.politics :as politics]
-            [skuld.logging :as logging]
-            [clojure.set   :as set]
+  (:require [skuld.client    :as client]
+            [skuld.admin     :as admin]
+            [skuld.vnode     :as vnode]
+            [skuld.curator   :as curator]
+            [skuld.net       :as net]
+            [skuld.task      :as task]
+            [skuld.aae       :as aae]
+            [skuld.politics  :as politics]
+            [skuld.logging   :as logging]
+            [clojure.set     :as set]
+            [clj-http.client :as http]
             skuld.http
             skuld.flake-test
             clj-helix.admin)
@@ -205,3 +206,12 @@
       (is (= n (count tasks)))
       (is (= (sort (map :id tasks)) (map :id tasks)))
       (is (every? :data tasks)))))
+
+(deftest list-tasks-http-test
+  (let [n 10]
+    (dotimes [i n]
+      (client/enqueue! *client* {:w 3} {:data "sup"}))
+
+    ; TODO: real tests
+    (let [resp (http/get "http://127.0.0.1:13100/list_tasks")]
+      (is (= 200 (:status resp))))))

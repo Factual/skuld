@@ -27,7 +27,8 @@
   :jvm-opts ^:replace ["-server"]
   :profiles {:dev {:dependencies [[criterium "0.4.1"]
                                   [com.google.guava/guava "14.0.1"]
-                                  [org.apache.curator/curator-test "2.0.1-incubating"]]}}
+                                  [org.apache.curator/curator-test "2.0.1-incubating"]
+                                  [clj-http "0.7.7"]]}}
   :test-selectors {:default (fn [x] (not (or (:integration x)
                                              (:time x)
                                              (:bench x))))
