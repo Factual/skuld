@@ -214,4 +214,7 @@
 
     ; TODO: real tests
     (let [resp (http/get "http://127.0.0.1:13100/list_tasks")]
-      (is (= 200 (:status resp))))))
+      (is (= 200 (:status resp))))
+    (let [resp (http/post "http://127.0.0.1:13100/list_tasks"
+                          {:throw-exceptions false})]
+      (is (= 405 (:status resp))))))
