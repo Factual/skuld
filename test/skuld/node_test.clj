@@ -195,6 +195,26 @@
 
     (is (= n (client/count-queue *client*)))))
 
+(deftest count-http-test
+  (elect! *nodes*)
+
+  (let [n 10]
+    (dotimes [i n]
+      (client/enqueue! *client* {:w 3} {:data "sup"}))
+
+    ; TODO: real tests
+    (let [resp (http/get "http://127.0.0.1:13100/count_tasks")]
+      (is (= 200 (:status resp))))
+    (let [resp (http/post "http://127.0.0.1:13100/count_tasks"
+                          {:throw-exceptions false})]
+      (is (= 405 (:status resp))))
+
+    (let [resp (http/get "http://127.0.0.1:13100/count_queue")]
+      (is (= 200 (:status resp))))
+    (let [resp (http/post "http://127.0.0.1:13100/count_queue"
+                          {:throw-exceptions false})]
+      (is (= 405 (:status resp))))))
+
 (deftest list-tasks-test
   ; Enqueue
   (let [n 10]
@@ -214,4 +234,7 @@
 
     ; TODO: real tests
     (let [resp (http/get "http://127.0.0.1:13100/list_tasks")]
-      (is (= 200 (:status resp))))))
+      (is (= 200 (:status resp))))
+    (let [resp (http/post "http://127.0.0.1:13100/list_tasks"
+                          {:throw-exceptions false})]
+      (is (= 405 (:status resp))))))
