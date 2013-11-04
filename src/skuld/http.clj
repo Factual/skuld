@@ -19,7 +19,8 @@
   [node]
   (fn [req]
     (condp route-matches req
-      "/list_tasks" (http-response 200 (node/list-tasks node {})))))
+      "/list_tasks" (http-response 200 (pr-str (node/list-tasks node {})))
+      (http-response 404 "Not Found"))))
 
 (defn service
   "Given a node and port, constructs a Jetty instance."
