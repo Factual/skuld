@@ -1,9 +1,15 @@
 (ns skuld.http
-  (:require [clout.core :refer [route-compile route-matches]]
+  (:require [cheshire.core :as json]
+            [cheshire.generate :refer [add-encoder encode-str]]
+            [clout.core :refer [route-compile route-matches]]
             [clojure.tools.logging :refer :all]
             [ring.adapter.jetty :refer [run-jetty]]
             [skuld.node :as node])
-  (:import org.eclipse.jetty.server.Server))
+  (:import [com.aphyr.skuld Bytes]
+           [org.eclipse.jetty.server Server]))
+
+;; Custom Cheshire encoder for the Bytes type
+(add-encoder Bytes encode-str)
 
 (defn- http-response
   "Given a status and body and optionally a headers map, returns a ring
@@ -28,9 +34,9 @@
   [node]
   (fn [req]
     (condp route-matches req
-      "/count_queue" (GET req (pr-str (node/count-queue node {})))
-      "/count_tasks" (GET req (pr-str (node/count-tasks node {})))
-      "/list_tasks"  (GET req (pr-str (node/list-tasks node {})))
+      "/count_queue" (GET req (json/generate-string (node/count-queue node {})))
+      "/count_tasks" (GET req (json/generate-string (node/count-tasks node {})))
+      "/list_tasks"  (GET req (json/generate-string (node/list-tasks node {})))
       (http-response 404 "Not Found"))))
 
 (defn service
