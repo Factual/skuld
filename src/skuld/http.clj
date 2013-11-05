@@ -11,6 +11,12 @@
 ;; Custom Cheshire encoder for the Bytes type
 (add-encoder Bytes encode-str)
 
+(defn- unhexify [hex]
+  (apply str
+    (map
+      (fn [[x y]] (char (Integer/parseInt (str x y) 16)))
+        (partition 2 hex))))
+
 (defn- http-response
   "Given a status and body and optionally a headers map, returns a ring
   response."
@@ -20,6 +26,7 @@
    :body body})
 
 (def ^:private ok-response (partial http-response 200))
+(def ^:static ^:private not-found (http-response 404 "Not Found"))
 
 (defn- serialize
   [req resp-body]
@@ -34,7 +41,9 @@
   method, a request map, and the response body."
   [allowed-method req resp-body]
   (if (= (:request-method req) allowed-method)
-    (apply ok-response (serialize req resp-body))
+    (if resp-body
+      (apply ok-response (serialize req resp-body))
+      not-found)
     (http-response 405 "Method Not Allowed")))
 
 (def ^:private GET (partial endpoint :get))
@@ -44,10 +53,15 @@
   [node]
   (fn [req]
     (condp route-matches req
-      "/count_queue" (GET req (node/count-queue node {}))
-      "/count_tasks" (GET req (node/count-tasks node {}))
-      "/list_tasks"  (GET req (node/list-tasks node {}))
-      (http-response 404 "Not Found"))))
+      "/queue/count" (GET req (node/count-queue node {}))
+      "/tasks/count" (GET req (node/count-tasks node {}))
+      "/tasks/list"  (GET req (node/list-tasks node {}))
+      "/tasks/:id"   :>> (fn [params]
+                           (let [id (-> params :id unhexify .getBytes Bytes.)
+                                 msg {:id id}
+                                 ret (node/get-task node msg)]
+                             (GET req (dissoc ret :responses))))
+      not-found)))
 
 (defn service
   "Given a node and port, constructs a Jetty instance."

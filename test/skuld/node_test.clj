@@ -202,23 +202,23 @@
     (dotimes [i n]
       (client/enqueue! *client* {:w 3} {:data "sup"}))
 
-    (let [resp (http/get "http://127.0.0.1:13100/count_tasks" {:as :json})
+    (let [resp (http/get "http://127.0.0.1:13100/tasks/count" {:as :json})
           content-type (get-in resp [:headers "content-type"])]
       (is (= 200 (:status resp)))
       (is (= "application/json;charset=utf-8" content-type))
       (is (= n (-> resp :body :count))))
-    (let [resp (http/post "http://127.0.0.1:13100/count_tasks"
+    (let [resp (http/post "http://127.0.0.1:13100/tasks/count"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))
 
-    (let [resp (http/get "http://127.0.0.1:13100/count_queue" {:as :json})
+    (let [resp (http/get "http://127.0.0.1:13100/queue/count" {:as :json})
           content-type (get-in resp [:headers "content-type"])]
       (is (= 200 (:status resp)))
       (is (= "application/json;charset=utf-8" content-type))
       ;; HACK: somehow the queue-count value is doubling--could this be from
       ;; the `count-test`? Something else?
       (is (= (* 2 n) (-> resp :body :count))))
-    (let [resp (http/post "http://127.0.0.1:13100/count_queue"
+    (let [resp (http/post "http://127.0.0.1:13100/queue/count"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
 
@@ -239,7 +239,7 @@
     (dotimes [i n]
       (client/enqueue! *client* {:w 3} {:data "sup"}))
 
-    (let [resp (http/get "http://127.0.0.1:13100/list_tasks" {:as :json})
+    (let [resp (http/get "http://127.0.0.1:13100/tasks/list" {:as :json})
           content-type (get-in resp [:headers "content-type"])
           tasks (-> resp :body :tasks)]
       (is (= 200 (:status resp)))
@@ -247,6 +247,19 @@
       (is (= n (count tasks)))
       (is (= (sort (map :id tasks)) (map :id tasks)))
       (is (every? :data tasks)))
-    (let [resp (http/post "http://127.0.0.1:13100/list_tasks"
+    (let [resp (http/post "http://127.0.0.1:13100/tasks/list"
                           {:throw-exceptions false})]
+      (is (= 405 (:status resp))))))
+
+(deftest get-task-http-test
+  (let [id (client/enqueue! *client* {:w 3} {:data "sup"})]
+    (let [resp (http/get (str "http://127.0.0.1:13100/tasks/" id) {:as :json})
+          content-type (get-in resp [:headers "content-type"])
+          task (-> resp :body :task)]
+      (is (= 200 (:status resp)))
+      (is (= "application/json;charset=utf-8" content-type))
+      (is (= task {:claims []})))
+
+    (let [resp (http/post (str "http://127.0.0.1:13100/tasks/" id)
+                         {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
