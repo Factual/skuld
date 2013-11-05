@@ -202,19 +202,22 @@
     (dotimes [i n]
       (client/enqueue! *client* {:w 3} {:data "sup"}))
 
-    ; TODO: real tests
-    (let [resp (http/get "http://127.0.0.1:13100/count_tasks")
+    (let [resp (http/get "http://127.0.0.1:13100/count_tasks" {:as :json})
           content-type (get-in resp [:headers "content-type"])]
       (is (= 200 (:status resp)))
-      (is (= "application/json;charset=utf-8" content-type)))
+      (is (= "application/json;charset=utf-8" content-type))
+      (is (= n (-> resp :body :count))))
     (let [resp (http/post "http://127.0.0.1:13100/count_tasks"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))
 
-    (let [resp (http/get "http://127.0.0.1:13100/count_queue")
+    (let [resp (http/get "http://127.0.0.1:13100/count_queue" {:as :json})
           content-type (get-in resp [:headers "content-type"])]
       (is (= 200 (:status resp)))
-      (is (= "application/json;charset=utf-8" content-type)))
+      (is (= "application/json;charset=utf-8" content-type))
+      ;; HACK: somehow the queue-count value is doubling--could this be from
+      ;; the `count-test`? Something else?
+      (is (= (* 2 n) (-> resp :body :count))))
     (let [resp (http/post "http://127.0.0.1:13100/count_queue"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
@@ -237,10 +240,14 @@
       (client/enqueue! *client* {:w 3} {:data "sup"}))
 
     ; TODO: real tests
-    (let [resp (http/get "http://127.0.0.1:13100/list_tasks")
-          content-type (get-in resp [:headers "content-type"])]
+    (let [resp (http/get "http://127.0.0.1:13100/list_tasks" {:as :json})
+          content-type (get-in resp [:headers "content-type"])
+          tasks (-> resp :body :tasks)]
       (is (= 200 (:status resp)))
-      (is (= "application/json;charset=utf-8" content-type)))
+      (is (= "application/json;charset=utf-8" content-type))
+      (is (= n (count tasks)))
+      (is (= (sort (map :id tasks)) (map :id tasks)))
+      (is (every? :data tasks)))
     (let [resp (http/post "http://127.0.0.1:13100/list_tasks"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
