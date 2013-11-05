@@ -203,14 +203,18 @@
       (client/enqueue! *client* {:w 3} {:data "sup"}))
 
     ; TODO: real tests
-    (let [resp (http/get "http://127.0.0.1:13100/count_tasks")]
-      (is (= 200 (:status resp))))
+    (let [resp (http/get "http://127.0.0.1:13100/count_tasks")
+          content-type (get-in resp [:headers "content-type"])]
+      (is (= 200 (:status resp)))
+      (is (= "application/json;charset=utf-8" content-type)))
     (let [resp (http/post "http://127.0.0.1:13100/count_tasks"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))
 
-    (let [resp (http/get "http://127.0.0.1:13100/count_queue")]
-      (is (= 200 (:status resp))))
+    (let [resp (http/get "http://127.0.0.1:13100/count_queue")
+          content-type (get-in resp [:headers "content-type"])]
+      (is (= 200 (:status resp)))
+      (is (= "application/json;charset=utf-8" content-type)))
     (let [resp (http/post "http://127.0.0.1:13100/count_queue"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
@@ -233,8 +237,10 @@
       (client/enqueue! *client* {:w 3} {:data "sup"}))
 
     ; TODO: real tests
-    (let [resp (http/get "http://127.0.0.1:13100/list_tasks")]
-      (is (= 200 (:status resp))))
+    (let [resp (http/get "http://127.0.0.1:13100/list_tasks")
+          content-type (get-in resp [:headers "content-type"])]
+      (is (= 200 (:status resp)))
+      (is (= "application/json;charset=utf-8" content-type)))
     (let [resp (http/post "http://127.0.0.1:13100/list_tasks"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
