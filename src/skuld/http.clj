@@ -11,7 +11,9 @@
 ;; Custom Cheshire encoder for the Bytes type
 (add-encoder Bytes encode-str)
 
-(defn- unhexify [hex]
+(defn- unhexify
+  "Given a hex-encoded string, reverses the hexidecimal encoding."
+  [hex]
   (apply str
     (map
       (fn [[x y]] (char (Integer/parseInt (str x y) 16)))
@@ -29,6 +31,9 @@
 (def ^:static ^:private not-found (http-response 404 "Not Found"))
 
 (defn- serialize
+  "Given a request map and a response body, serializes the response body first
+  based on `Accept` header and then falling back to JSON. Currently only
+  serializes to JSON. Returns the body `Content-Type` header in a vector."
   [req resp-body]
   (let [accept (get-in req [:headers "Accept"] "application/json")
         json-ct {"Content-Type" "application/json;charset=utf-8"}]
