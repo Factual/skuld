@@ -239,7 +239,6 @@
     (dotimes [i n]
       (client/enqueue! *client* {:w 3} {:data "sup"}))
 
-    ; TODO: real tests
     (let [resp (http/get "http://127.0.0.1:13100/list_tasks" {:as :json})
           content-type (get-in resp [:headers "content-type"])
           tasks (-> resp :body :tasks)]
