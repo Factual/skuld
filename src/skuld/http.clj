@@ -4,8 +4,10 @@
             [clout.core :refer [route-compile route-matches]]
             [clojure.tools.logging :refer :all]
             [ring.adapter.jetty :refer [run-jetty]]
+            [ring.middleware.json :refer [wrap-json-body]]
             [skuld.node :as node])
   (:import [com.aphyr.skuld Bytes]
+           [com.fasterxml.jackson.core JsonParseException]
            [org.eclipse.jetty.server Server]))
 
 ;; Custom Cheshire encoder for the Bytes type
@@ -54,38 +56,69 @@
 (def ^:private GET (partial endpoint :get))
 (def ^:private POST (partial endpoint :post))
 
+(defn- str->id
+  [s]
+  (-> s unhexify .getBytes Bytes.))
+
 (defn- make-handler
   "Given a node, constructs the handler function. Returns a response map."
   [node]
   (fn [req]
     (condp route-matches req
-      ;; TODO: The `/enqueue` endpoint is pretty messy currently
-      "/enqueue"     (let [body (json/parse-string (-> req :body slurp) true)
-                           task (:task body)
-                           w    (:w body)]
-                       (try
-                         (let [ret (node/enqueue! node {:task task :w w})]
-                           (POST req (dissoc ret :responses)))
-                         (catch java.lang.AssertionError e
-                           ;; Handle vnode assertion; return an error to the
-                           ;; client
-                           (POST req {:error (.getMessage e)}))))
-      "/queue/count" (GET req (node/count-queue node {}))
-      "/tasks/count" (GET req (node/count-tasks node {}))
-      "/tasks/list"  (GET req (node/list-tasks node {}))
-      "/tasks/:id"   :>> (fn [params]
-                           (let [id (-> params :id unhexify .getBytes Bytes.)
-                                 msg {:id id}
-                                 ret (node/get-task node msg)]
-                             (GET req (dissoc ret :responses))))
+      "/queue/count"        (GET req (node/count-queue node {}))
 
+      "/tasks/claim/:id"    :>> (fn [{:keys [id]}]
+                                  (let [msg {:id (str->id id)}]
+                                    (GET req (node/claim! node msg))))
+      "/tasks/complete/:id" :>> (fn [{:keys [id]}]
+                                  (let [data (:body req)
+                                        id   (str->id id)
+                                        msg  {:task-id id :w (:w data)}
+                                        ret  (node/complete! node msg)]
+                                    (POST req (dissoc ret :responses))))
+      "/tasks/count"        (GET req (node/count-tasks node {}))
+
+      ;; TODO: The `/tasks/enqueue` endpoint is pretty messy currently
+      "/tasks/enqueue"      (let [data (:body req)
+                                  msg  {:task (:task data) :w (:w data)}]
+                              (try
+                                (let [ret (node/enqueue! node msg)]
+                                  (POST req (dissoc ret :responses)))
+                                ;; Handle vnode assertion; return an error to
+                                ;; the client
+                                (catch java.lang.AssertionError e
+                                  (POST req {:error (.getMessage e)}))))
+      "/tasks/list"         (GET req (node/list-tasks node {}))
+
+      ;; TODO: Pass in `r` value
+      "/tasks/:id"          :>> (fn [{:keys [id]}]
+                                  (let [msg {:id (str->id id)}
+                                        ret (node/get-task node msg)]
+                                    (GET req (dissoc ret :responses))))
+      "/request-vote"       (let [part (-> req :body :partition)
+                                  msg {:partition part}]
+                              (POST req (node/request-vote! node msg)))
+      "/wipe"               (GET req (node/wipe! node {}))
       not-found)))
+
+(defn- wrap-json-body-safe
+  "A wrapper for `wrap-json-body` which catches JSON parsing exceptions and
+  returns a Bad Request."
+  [handler & [opts]]
+  (let [request-handler (wrap-json-body handler opts)]
+    (fn [request]
+      (try (request-handler request)
+        (catch JsonParseException e
+          (handler request)  ;; resolve request before generating a response
+          (http-response 400 "Bad Request"))))))
 
 (defn service
   "Given a node and port, constructs a Jetty instance."
   [node port]
   (info "Starting HTTP server on" (str (:host node) ":" port))
-  (let [handler (make-handler node)
+  (let [handler (->
+                  (make-handler node)
+                  (wrap-json-body-safe {:keywords? true}))
         jetty   (run-jetty handler {:host (:host node)
                                     :port port
                                     :join? false})]

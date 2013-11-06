@@ -265,7 +265,7 @@
       (is (= 405 (:status resp))))))
 
 (deftest enqueue-http-test
-  (let [resp (http/post "http://127.0.0.1:13100/enqueue"
+  (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
                        {:form-params {:task {:data "sup"} :w 3}
                         :content-type :json
                         :as :json})
@@ -280,6 +280,6 @@
           task (-> resp* :body :task)]
       (is (= task {:claims []})))
 
-    (let [resp (http/get "http://127.0.0.1:13100/enqueue"
+    (let [resp (http/get "http://127.0.0.1:13100/tasks/enqueue"
                          {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
