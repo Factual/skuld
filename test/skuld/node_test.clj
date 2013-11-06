@@ -263,3 +263,23 @@
     (let [resp (http/post (str "http://127.0.0.1:13100/tasks/" id)
                          {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
+
+(deftest enqueue-http-test
+  (let [resp (http/post "http://127.0.0.1:13100/enqueue"
+                       {:form-params {:task {:data "sup"} :w 3}
+                        :content-type :json
+                        :as :json})
+        content-type (get-in resp [:headers "content-type"])
+        id (-> resp :body :id)]
+    (is (= 200 (:status resp)))
+    (is (= "application/json;charset=utf-8" content-type))
+    (is (not (nil? id)))
+
+    ;; Ensure we can retrieve the task
+    (let [resp* (http/get (str "http://127.0.0.1:13100/tasks/" id) {:as :json})
+          task (-> resp* :body :task)]
+      (is (= task {:claims []})))
+
+    (let [resp (http/get "http://127.0.0.1:13100/enqueue"
+                         {:throw-exceptions false})]
+      (is (= 405 (:status resp))))))
