@@ -2,24 +2,22 @@
   (:require [cheshire.core :as json]
             [cheshire.generate :refer [add-encoder encode-str]]
             [clout.core :refer [route-compile route-matches]]
+            [clojure.data.codec.base64 :as b64]
             [clojure.tools.logging :refer :all]
             [ring.adapter.jetty :refer [run-jetty]]
             [ring.middleware.json :refer [wrap-json-body]]
             [skuld.node :as node])
   (:import [com.aphyr.skuld Bytes]
-           [com.fasterxml.jackson.core JsonParseException]
+           [com.fasterxml.jackson.core JsonGenerator JsonParseException]
            [org.eclipse.jetty.server Server]))
 
-;; Custom Cheshire encoder for the Bytes type
-(add-encoder Bytes encode-str)
+(defn- encode-bytes
+  "Encode a bytes to the json generator."
+  [^Bytes b ^JsonGenerator jg]
+  (.writeString jg (-> b .bytes b64/encode String.)))
 
-(defn- unhexify
-  "Given a hex-encoded string, reverses the hexidecimal encoding."
-  [hex]
-  (apply str
-    (map
-      (fn [[x y]] (char (Integer/parseInt (str x y) 16)))
-        (partition 2 hex))))
+;; Custom Cheshire encoder for the Bytes type
+(add-encoder Bytes encode-bytes)
 
 (defn- http-response
   "Given a status and body and optionally a headers map, returns a ring
@@ -56,9 +54,10 @@
 (def ^:private GET (partial endpoint :get))
 (def ^:private POST (partial endpoint :post))
 
-(defn- str->id
-  [s]
-  (-> s unhexify .getBytes Bytes.))
+(defn b64->id
+  "Coerces a base64-encoded id into a Bytes type."
+  [b64-id]
+  (-> b64-id .getBytes b64/decode Bytes.))
 
 (defn- make-handler
   "Given a node, constructs the handler function. Returns a response map."
@@ -66,24 +65,21 @@
   (fn [req]
     (condp route-matches req
       "/queue/count"        (GET req (node/count-queue node {}))
-
       "/tasks/claim/:id"    :>> (fn [{:keys [id]}]
-                                  (let [msg {:id (str->id id)}]
+                                  (let [msg {:id (b64->id id)}]
                                     (GET req (node/claim! node msg))))
       "/tasks/complete/:id" :>> (fn [{:keys [id]}]
                                   (let [data (:body req)
-                                        id   (str->id id)
-                                        msg  {:task-id id :w (:w data)}
+                                        id   (b64->id id)
+                                        msg  (assoc data {:task-id id})
                                         ret  (node/complete! node msg)]
                                     (POST req (dissoc ret :responses))))
       "/tasks/count"        (GET req (node/count-tasks node {}))
 
       ;; TODO: The `/tasks/enqueue` endpoint is pretty messy currently
-      "/tasks/enqueue"      (let [data (:body req)
-                                  msg  {:task (:task data) :w (:w data)}]
-                              (try
-                                (let [ret (node/enqueue! node msg)]
-                                  (POST req (dissoc ret :responses)))
+      "/tasks/enqueue"      (let [data (:body req)]
+                              (try (let [ret (node/enqueue! node (:body req))]
+                                     (POST req (dissoc ret :responses)))
                                 ;; Handle vnode assertion; return an error to
                                 ;; the client
                                 (catch java.lang.AssertionError e
@@ -92,7 +88,7 @@
 
       ;; TODO: Pass in `r` value
       "/tasks/:id"          :>> (fn [{:keys [id]}]
-                                  (let [msg {:id (str->id id)}
+                                  (let [msg {:id (b64->id id)}
                                         ret (node/get-task node msg)]
                                     (GET req (dissoc ret :responses))))
       "/request-vote"       (let [part (-> req :body :partition)
