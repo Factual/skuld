@@ -52,12 +52,24 @@
     (http-response 405 "Method Not Allowed")))
 
 (def ^:private GET (partial endpoint :get))
+(def ^:private POST (partial endpoint :post))
 
 (defn- make-handler
   "Given a node, constructs the handler function. Returns a response map."
   [node]
   (fn [req]
     (condp route-matches req
+      ;; TODO: The `/enqueue` endpoint is pretty messy currently
+      "/enqueue"     (let [body (json/parse-string (-> req :body slurp) true)
+                           task (:task body)
+                           w    (:w body)]
+                       (try
+                         (let [ret (node/enqueue! node {:task task :w w})]
+                           (POST req (dissoc ret :responses)))
+                         (catch java.lang.AssertionError e
+                           ;; Handle vnode assertion; return an error to the
+                           ;; client
+                           (POST req {:error (.getMessage e)}))))
       "/queue/count" (GET req (node/count-queue node {}))
       "/tasks/count" (GET req (node/count-tasks node {}))
       "/tasks/list"  (GET req (node/list-tasks node {}))
@@ -66,6 +78,7 @@
                                  msg {:id id}
                                  ret (node/get-task node msg)]
                              (GET req (dissoc ret :responses))))
+
       not-found)))
 
 (defn service
