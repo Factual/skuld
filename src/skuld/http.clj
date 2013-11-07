@@ -77,8 +77,10 @@
       "/tasks/count"        (GET req (node/count-tasks node {}))
 
       ;; TODO: The `/tasks/enqueue` endpoint is pretty messy currently
-      "/tasks/enqueue"      (let [data (:body req)]
-                              (try (let [ret (node/enqueue! node (:body req))]
+      "/tasks/enqueue"      (let [;; Explicitly suck out the task key to avoid
+                                  ;; passing bad params to `node/enqueue!`
+                                  msg {:task (-> req :body :task)}]
+                              (try (let [ret (node/enqueue! node msg)]
                                      (POST req (dissoc ret :responses)))
                                 ;; Handle vnode assertion; return an error to
                                 ;; the client
