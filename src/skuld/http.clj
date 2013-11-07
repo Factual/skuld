@@ -54,7 +54,7 @@
 (def ^:private GET (partial endpoint :get))
 (def ^:private POST (partial endpoint :post))
 
-(defn b64->id
+(defn- b64->id
   "Coerces a base64-encoded id into a Bytes type."
   [b64-id]
   (-> b64-id .getBytes b64/decode Bytes.))
@@ -65,15 +65,21 @@
   (fn [req]
     (condp route-matches req
       "/queue/count"        (GET req (node/count-queue node {}))
+
+      ;; TODO: Make sure we return something meaningful to the client
       "/tasks/claim/:id"    :>> (fn [{:keys [id]}]
-                                  (let [msg {:id (b64->id id)}]
-                                    (GET req (node/claim! node msg))))
+                                  (let [msg {:id (b64->id id)}
+                                        ret (node/claim! node msg)
+                                        cnt (-> ret :task :claims count dec)]
+                                    (GET req {:claim-id cnt})))
+
+      ;; TODO: Pass in `claim-id` value
       "/tasks/complete/:id" :>> (fn [{:keys [id]}]
-                                  (let [data (:body req)
-                                        id   (b64->id id)
-                                        msg  (assoc data {:task-id id})
-                                        ret  (node/complete! node msg)]
-                                    (POST req (dissoc ret :responses))))
+                                  (let [id  (b64->id id)
+                                        msg {:task-id id
+                                             :claim-id (Integer/parseInt "0")}
+                                        ret (node/complete! node msg)]
+                                    (GET req (dissoc ret :responses))))
       "/tasks/count"        (GET req (node/count-tasks node {}))
 
       ;; TODO: The `/tasks/enqueue` endpoint is pretty messy currently

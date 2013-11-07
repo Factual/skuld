@@ -15,10 +15,12 @@
             [skuld.logging   :as logging]
             [clojure.set     :as set]
             [clj-http.client :as http]
-            [skuld.http      :refer [b64->id]]
+            skuld.http
             skuld.flake-test
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
+
+(def b64->id #'skuld.http/b64->id)
 
 (defn admin
   [zk]
@@ -317,6 +319,29 @@
     (is (= "application/json;charset=utf-8" content-type))
     (is (= n 0))))
 
+(deftest claim-http-test
+  (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
+                        {:form-params {:task {:data "sup"} :w 3}
+                         :content-type :json
+                         :as :json})
+        id (-> resp :body :id)
+        resp* (http/get (str "http://127.0.0.1:13100/tasks/" id) {:as :json})
+        claims (-> resp* :body :task :claims)]
+    (is (= claims []))
+
+    (let [resp (http/get (str "http://127.0.0.1:13100/tasks/claim/" id)
+                         {:as :json})
+          content-type (get-in resp [:headers "content-type"])
+          claim-id (-> resp :body :claim-id)
+          resp* (http/get (str "http://127.0.0.1:13100/tasks/" id) {:as :json})
+          claims (-> resp* :body :task :claims)]
+      (is (= 200 (:status resp)))
+      (is (= "application/json;charset=utf-8" content-type)))))
+
+      ;; TODO: Currently broken
+      ;;(is (= claim-id 0))
+      ;;(is (not= claims [])))))
+
 (deftest complete-http-test
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
                         {:form-params {:task {:data "sup"} :w 3}
@@ -325,12 +350,17 @@
         id (-> resp :body :id)
         resp* (http/get (str "http://127.0.0.1:13100/tasks/" id) {:as :json})
         data (-> resp* :body :task :data)]
-    (is (= data "sup"))))
+    (is (= data "sup"))
 
-    ;(let [resp (http/post (str "http://127.0.0.1:13100/tasks/complete/" id)
-    ;                      {:form-params {:w 3}
-    ;                       :content-type :json
-    ;                       :as :json})
-    ;      content-type (get-in resp [:headers "content-type"])]
-    ;  (is (= 200 (:status resp)))
-    ;  (is (= "application/json;charset=utf-8" content-type)))))
+    (let [resp (http/get (str "http://127.0.0.1:13100/tasks/complete/" id)
+                         {:as :json})
+          content-type (get-in resp [:headers "content-type"])]
+      (is (= 200 (:status resp)))
+      (is (= "application/json;charset=utf-8" content-type)))))
+
+(deftest bad-json-http-test
+  (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
+                        {:body "{"  ;; Bogus JSON
+                         :content-type :json
+                         :throw-exceptions false})]
+    (is (= 400 (:status resp)))))
