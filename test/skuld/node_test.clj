@@ -320,6 +320,8 @@
     (is (= n 0))))
 
 (deftest claim-http-test
+  (elect! *nodes*)
+
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
                         {:form-params {:task {:data "sup"} :w 3}
                          :content-type :json
@@ -336,11 +338,9 @@
           resp* (http/get (str "http://127.0.0.1:13100/tasks/" id) {:as :json})
           claims (-> resp* :body :task :claims)]
       (is (= 200 (:status resp)))
-      (is (= "application/json;charset=utf-8" content-type)))))
-
-      ;; TODO: Currently broken
-      ;;(is (= claim-id 0))
-      ;;(is (not= claims [])))))
+      (is (= "application/json;charset=utf-8" content-type))
+      (is (= claim-id 0))
+      (is (not= claims [])))))
 
 (deftest complete-http-test
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
