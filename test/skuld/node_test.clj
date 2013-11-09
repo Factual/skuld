@@ -322,6 +322,7 @@
 (deftest claim-http-test
   (elect! *nodes*)
 
+  ;; First enqueue a task
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
                         {:form-params {:task {:data "sup"} :w 3}
                          :content-type :json
@@ -331,6 +332,7 @@
         claims (-> resp* :body :task :claims)]
     (is (= claims []))
 
+    ;; Now let's claim the task
     (let [resp (http/get (str "http://127.0.0.1:13100/tasks/claim/" id)
                          {:as :json})
           content-type (get-in resp [:headers "content-type"])
@@ -343,6 +345,9 @@
       (is (not= claims [])))))
 
 (deftest complete-http-test
+  (elect! *nodes*)
+
+  ;; First enqueue a task
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
                         {:form-params {:task {:data "sup"} :w 3}
                          :content-type :json
@@ -352,6 +357,19 @@
         data (-> resp* :body :task :data)]
     (is (= data "sup"))
 
+    ;; Now let's claim the task
+    (let [resp (http/get (str "http://127.0.0.1:13100/tasks/claim/" id)
+                         {:as :json})
+          content-type (get-in resp [:headers "content-type"])
+          claim-id (-> resp :body :claim-id)
+          resp* (http/get (str "http://127.0.0.1:13100/tasks/" id) {:as :json})
+          claims (-> resp* :body :task :claims)]
+      (is (= 200 (:status resp)))
+      (is (= "application/json;charset=utf-8" content-type))
+      (is (= claim-id 0))
+      (is (not= claims [])))
+
+    ;; Finally let's complete it
     (let [resp (http/get (str "http://127.0.0.1:13100/tasks/complete/" id)
                          {:as :json})
           content-type (get-in resp [:headers "content-type"])]
