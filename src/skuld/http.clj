@@ -4,8 +4,10 @@
             [clout.core :refer [route-compile route-matches]]
             [clojure.data.codec.base64 :as b64]
             [clojure.tools.logging :refer :all]
+            [clojure.walk :refer [keywordize-keys]]
             [ring.adapter.jetty :refer [run-jetty]]
             [ring.middleware.json :refer [wrap-json-body]]
+            [ring.util.codec :refer [form-decode]]
             [skuld.node :as node])
   (:import [com.aphyr.skuld Bytes]
            [com.fasterxml.jackson.core JsonGenerator JsonParseException]
@@ -59,6 +61,14 @@
   [b64-id]
   (-> b64-id .getBytes b64/decode Bytes.))
 
+(defn- parse-int
+  "Safely coerces a string into an integer. If the conversion is impossible,
+  returns a fallback value if provided or 0."
+  [s & [fallback]]
+  (try (Integer/parseInt s)
+    (catch Exception e
+      (or fallback 0))))
+
 (defn- make-handler
   "Given a node, constructs the handler function. Returns a response map."
   [node]
@@ -72,31 +82,34 @@
                                         ret (node/claim! node msg)
                                         cnt (-> ret :task :claims count dec)]
                                     (GET req {:claim-id cnt})))
-
-      ;; TODO: Pass in `claim-id` value
       "/tasks/complete/:id" :>> (fn [{:keys [id]}]
                                   (let [id  (b64->id id)
-                                        msg {:task-id id
-                                             :claim-id (Integer/parseInt "0")}
+                                        idx (-> req :query-params :idx)
+                                        msg {:task-id  id
+                                             :claim-id (parse-int idx)}
                                         ret (node/complete! node msg)]
                                     (GET req (dissoc ret :responses))))
       "/tasks/count"        (GET req (node/count-tasks node {}))
 
       ;; TODO: The `/tasks/enqueue` endpoint is pretty messy currently
-      "/tasks/enqueue"      (let [;; Explicitly suck out the task key to avoid
-                                  ;; passing bad params to `node/enqueue!`
-                                  msg {:task (-> req :body :task)}]
-                              (try (let [ret (node/enqueue! node msg)]
+      "/tasks/enqueue"      (if-let [;; Explicitly suck out the task key to
+                                     ;; avoid passing bad params to
+                                     ;; `node/enqueue!`
+                                     task (-> req :body :task)]
+                              (try (let [ret (node/enqueue! node {:task task})]
                                      (POST req (dissoc ret :responses)))
                                 ;; Handle vnode assertion; return an error to
                                 ;; the client
                                 (catch java.lang.AssertionError e
-                                  (POST req {:error (.getMessage e)}))))
+                                  (POST req {:error (.getMessage e)})))
+                              ;; Missing parameters, i.e. POST body
+                              (POST req {:error "Bad Request"}))
       "/tasks/list"         (GET req (node/list-tasks node {}))
 
-      ;; TODO: Pass in `r` value
+      ;; TODO: Return 404 when :id doesn't exist?
       "/tasks/:id"          :>> (fn [{:keys [id]}]
-                                  (let [msg {:id (b64->id id)}
+                                  (let [r (-> req :query-params :r)
+                                        msg {:id (b64->id id) :r (parse-int r)}
                                         ret (node/get-task node msg)]
                                     (GET req (dissoc ret :responses))))
       "/request-vote"       (let [part (-> req :body :partition)
@@ -104,6 +117,35 @@
                               (POST req (node/request-vote! node msg)))
       "/wipe"               (GET req (node/wipe! node {}))
       not-found)))
+
+;; Lifted from `ring.middleware.params`
+(defn- parse-params [params encoding keywords?]
+  (let [params (if keywords?
+                 (keywordize-keys (form-decode params encoding))
+                 (form-decode params encoding))]
+    (if (map? params) params {})))
+
+(defn- assoc-query-params
+  "Parse and assoc parameters from the query string with the request."
+  [request encoding keywords?]
+  (merge-with merge request
+    (if-let [query-string (:query-string request)]
+      (let [params (parse-params query-string encoding keywords?)]
+        {:query-params params})
+      {:query-params {}})))
+
+(defn- wrap-params
+  "A middleware that attempts to parse incoming query strings into maps."
+  [handler & [opts]]
+  (fn [request]
+    (let [encoding (or (:encoding opts)
+                       (:character-encoding request)
+                       "UTF-8")
+          keywords? (:keywords? opts)
+          request (if (:query-params request)
+                    request
+                    (assoc-query-params request encoding keywords?))]
+      (handler request))))
 
 (defn- wrap-json-body-safe
   "A wrapper for `wrap-json-body` which catches JSON parsing exceptions and
@@ -122,9 +164,10 @@
   (info "Starting HTTP server on" (str (:host node) ":" port))
   (let [handler (->
                   (make-handler node)
-                  (wrap-json-body-safe {:keywords? true}))
-        jetty   (run-jetty handler {:host (:host node)
-                                    :port port
+                  (wrap-json-body-safe {:keywords? true})
+                  (wrap-params {:keywords? true}))
+        jetty   (run-jetty handler {:host  (:host node)
+                                    :port  port
                                     :join? false})]
     jetty))
 
