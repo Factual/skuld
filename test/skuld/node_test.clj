@@ -360,21 +360,25 @@
     ;; Now let's claim the task
     (let [resp (http/get (str "http://127.0.0.1:13100/tasks/claim/" id)
                          {:as :json})
-          content-type (get-in resp [:headers "content-type"])
           claim-id (-> resp :body :claim-id)
           resp* (http/get (str "http://127.0.0.1:13100/tasks/" id) {:as :json})
           claims (-> resp* :body :task :claims)]
-      (is (= 200 (:status resp)))
-      (is (= "application/json;charset=utf-8" content-type))
       (is (= claim-id 0))
-      (is (not= claims [])))
+      (is (not= claims []))
 
-    ;; Finally let's complete it
-    (let [resp (http/get (str "http://127.0.0.1:13100/tasks/complete/" id)
-                         {:as :json})
-          content-type (get-in resp [:headers "content-type"])]
-      (is (= 200 (:status resp)))
-      (is (= "application/json;charset=utf-8" content-type)))))
+      ;; Finally let's complete it
+      (let [uri (str "http://127.0.0.1:13100/tasks/complete/"
+                     id
+                     "?idx="
+                     claim-id)
+            resp (http/get uri {:as :json})
+            content-type (get-in resp [:headers "content-type"])
+            resp* (http/get (str "http://127.0.0.1:13100/tasks/" id)
+                            {:as :json})
+            completed (-> resp* :body :task :claims (get claim-id) :completed)]
+        (is (= 200 (:status resp)))
+        (is (= "application/json;charset=utf-8" content-type))
+        (is (not (nil? completed)))))))
 
 (deftest bad-json-http-test
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
