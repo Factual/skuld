@@ -364,3 +364,8 @@
                          :content-type :json
                          :throw-exceptions false})]
     (is (= 400 (:status resp)))))
+
+(deftest bad-request-enqueue-http-test
+  (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue" {:as :json})
+        body (:body resp)]
+    (is (= {:error "Bad Request"} body))))
