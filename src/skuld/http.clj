@@ -1,4 +1,5 @@
 (ns skuld.http
+  "An HTTP interface to a Skuld node."
   (:require [cheshire.core :as json]
             [cheshire.generate :refer [add-encoder encode-str]]
             [clout.core :refer [route-compile route-matches]]
@@ -30,6 +31,7 @@
    :body body})
 
 (def ^:private ok-response (partial http-response 200))
+(def ^:private bad-request (partial http-response 400))
 (def ^:static ^:private not-found (http-response 404 "Not Found"))
 
 (defn- serialize
@@ -46,12 +48,13 @@
 (defn- endpoint
   "Defines an HTTP endpoint with an allowed request method. Takes an allowed
   method, a request map, and the response body."
-  [allowed-method req resp-body]
-  (if (= (:request-method req) allowed-method)
-    (if resp-body
-      (apply ok-response (serialize req resp-body))
-      not-found)
-    (http-response 405 "Method Not Allowed")))
+  [allowed-method req resp-body & [http-resp-fn]]
+  (let [http-resp (or http-resp-fn ok-response)]
+    (if (= (:request-method req) allowed-method)
+      (if resp-body
+        (apply http-resp (serialize req resp-body))
+        not-found)
+      (http-response 405 "Method Not Allowed"))))
 
 (def ^:private GET (partial endpoint :get))
 (def ^:private POST (partial endpoint :post))
@@ -101,9 +104,11 @@
                                 ;; Handle vnode assertion; return an error to
                                 ;; the client
                                 (catch java.lang.AssertionError e
-                                  (POST req {:error (.getMessage e)})))
+                                  (let [err {:error (.getMessage e)}]
+                                    (POST req err bad-request))))
                               ;; Missing parameters, i.e. POST body
-                              (POST req {:error "Bad Request"}))
+                              (let [err {:error "Missing required params"}]
+                                (POST req err bad-request)))
       "/tasks/list"         (GET req (node/list-tasks node {}))
 
       ;; TODO: Return 404 when :id doesn't exist?
@@ -156,7 +161,7 @@
       (try (request-handler request)
         (catch JsonParseException e
           (handler request)  ;; resolve request before generating a response
-          (http-response 400 "Bad Request"))))))
+          (bad-request "Bad Request"))))))
 
 (defn service
   "Given a node and port, constructs a Jetty instance."

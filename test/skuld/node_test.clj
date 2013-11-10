@@ -15,6 +15,7 @@
             [skuld.logging   :as logging]
             [clojure.set     :as set]
             [clj-http.client :as http]
+            [cheshire.core   :as json]
             skuld.http
             skuld.flake-test
             clj-helix.admin)
@@ -366,6 +367,8 @@
     (is (= 400 (:status resp)))))
 
 (deftest bad-request-enqueue-http-test
-  (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue" {:as :json})
-        body (:body resp)]
-    (is (= {:error "Bad Request"} body))))
+  (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
+                        {:throw-exceptions false})
+        data (-> resp :body (json/parse-string true))]
+    (is (= 400 (:status resp)))
+    (is (= {:error "Missing required params"} data))))
