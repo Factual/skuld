@@ -1,14 +1,15 @@
 (ns skuld.http
-  (:require [cheshire.core :as json]
-            [cheshire.generate :refer [add-encoder encode-str]]
-            [clout.core :refer [route-compile route-matches]]
+  "An HTTP interface to a Skuld node."
+  (:require [cheshire.core             :as json]
+            [cheshire.generate         :refer [add-encoder encode-str]]
+            [clout.core                :refer [route-compile route-matches]]
             [clojure.data.codec.base64 :as b64]
-            [clojure.tools.logging :refer :all]
-            [clojure.walk :refer [keywordize-keys]]
-            [ring.adapter.jetty :refer [run-jetty]]
-            [ring.middleware.json :refer [wrap-json-body]]
-            [ring.util.codec :refer [form-decode]]
-            [skuld.node :as node])
+            [clojure.tools.logging     :refer :all]
+            [clojure.walk              :refer [keywordize-keys]]
+            [ring.adapter.jetty        :refer [run-jetty]]
+            [ring.middleware.json      :refer [wrap-json-body]]
+            [ring.util.codec           :refer [form-decode]]
+            [skuld.node                :as node])
   (:import [com.aphyr.skuld Bytes]
            [com.fasterxml.jackson.core JsonGenerator JsonParseException]
            [org.eclipse.jetty.server Server]))
@@ -30,7 +31,8 @@
    :body body})
 
 (def ^:private ok-response (partial http-response 200))
-(def ^:static ^:private not-found (http-response 404 "Not Found"))
+(def ^:private bad-request (partial http-response 400))
+(def ^:private not-found (partial http-response 404))
 
 (defn- serialize
   "Given a request map and a response body, serializes the response body first
@@ -46,12 +48,13 @@
 (defn- endpoint
   "Defines an HTTP endpoint with an allowed request method. Takes an allowed
   method, a request map, and the response body."
-  [allowed-method req resp-body]
-  (if (= (:request-method req) allowed-method)
-    (if resp-body
-      (apply ok-response (serialize req resp-body))
-      not-found)
-    (http-response 405 "Method Not Allowed")))
+  [allowed-method req resp-body & [http-resp-fn]]
+  (let [http-resp (or http-resp-fn ok-response)]
+    (if (= (:request-method req) allowed-method)
+      (if resp-body
+        (apply http-resp (serialize req resp-body))
+        (not-found "Not Found"))
+      (http-response 405 "Method Not Allowed"))))
 
 (def ^:private GET (partial endpoint :get))
 (def ^:private POST (partial endpoint :post))
@@ -101,17 +104,21 @@
                                 ;; Handle vnode assertion; return an error to
                                 ;; the client
                                 (catch java.lang.AssertionError e
-                                  (POST req {:error (.getMessage e)})))
+                                  (let [err {:error (.getMessage e)}]
+                                    (POST req err bad-request))))
                               ;; Missing parameters, i.e. POST body
-                              (POST req {:error "Bad Request"}))
+                              (let [err {:error "Missing required params"}]
+                                (POST req err bad-request)))
       "/tasks/list"         (GET req (node/list-tasks node {}))
-
-      ;; TODO: Return 404 when :id doesn't exist?
       "/tasks/:id"          :>> (fn [{:keys [id]}]
                                   (let [r (-> req :query-params :r)
                                         msg {:id (b64->id id) :r (parse-int r)}
                                         ret (node/get-task node msg)]
-                                    (GET req (dissoc ret :responses))))
+                                    (if-not (-> ret :task :id)
+                                      (GET req
+                                           {:error "No such task"}
+                                           not-found)
+                                      (GET req (dissoc ret :responses)))))
       "/request-vote"       (let [part (-> req :body :partition)
                                   msg {:partition part}]
                               (POST req (node/request-vote! node msg)))
@@ -156,7 +163,7 @@
       (try (request-handler request)
         (catch JsonParseException e
           (handler request)  ;; resolve request before generating a response
-          (http-response 400 "Bad Request"))))))
+          (bad-request "Bad Request"))))))
 
 (defn service
   "Given a node and port, constructs a Jetty instance."
