@@ -1,15 +1,15 @@
 (ns skuld.http
   "An HTTP interface to a Skuld node."
-  (:require [cheshire.core :as json]
-            [cheshire.generate :refer [add-encoder encode-str]]
-            [clout.core :refer [route-compile route-matches]]
+  (:require [cheshire.core             :as json]
+            [cheshire.generate         :refer [add-encoder encode-str]]
+            [clout.core                :refer [route-compile route-matches]]
             [clojure.data.codec.base64 :as b64]
-            [clojure.tools.logging :refer :all]
-            [clojure.walk :refer [keywordize-keys]]
-            [ring.adapter.jetty :refer [run-jetty]]
-            [ring.middleware.json :refer [wrap-json-body]]
-            [ring.util.codec :refer [form-decode]]
-            [skuld.node :as node])
+            [clojure.tools.logging     :refer :all]
+            [clojure.walk              :refer [keywordize-keys]]
+            [ring.adapter.jetty        :refer [run-jetty]]
+            [ring.middleware.json      :refer [wrap-json-body]]
+            [ring.util.codec           :refer [form-decode]]
+            [skuld.node                :as node])
   (:import [com.aphyr.skuld Bytes]
            [com.fasterxml.jackson.core JsonGenerator JsonParseException]
            [org.eclipse.jetty.server Server]))
@@ -110,8 +110,6 @@
                               (let [err {:error "Missing required params"}]
                                 (POST req err bad-request)))
       "/tasks/list"         (GET req (node/list-tasks node {}))
-
-      ;; TODO: Return 404 when :id doesn't exist?
       "/tasks/:id"          :>> (fn [{:keys [id]}]
                                   (let [r (-> req :query-params :r)
                                         msg {:id (b64->id id) :r (parse-int r)}
