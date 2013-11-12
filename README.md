@@ -262,7 +262,7 @@ skuld.bin=> (use 'skuld.client)
 skuld.bin=> (skuld.flake/init!)
 
 ; OK, let's define a client with a few hosts to talk to:
-skuld.bin=> (def c (client [{:host "127.0.0.1" :port 13000} {:host "127.0.0.1" :port 13001]))
+skuld.bin=> (def c (client [{:host "127.0.0.1" :port 13000} {:host "127.0.0.1" :port 13001}]))
 
 ; There are no tasks in the system now:
 skuld.bin=> (count-tasks c)
