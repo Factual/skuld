@@ -52,13 +52,18 @@
 (defn valid-claim?
   "Is a claim currently valid?"
   [claim]
-  (< (flake/linear-time)
-     (+ (:end claim) clock-skew-buffer)))
+  (when-let [end (:end claim)]
+    (< (flake/linear-time)
+       (+ end clock-skew-buffer))))
 
 (defn claimed?
   "Is this task currently claimed?"
   [task]
-  (some valid-claim? (:claims task)))
+  (try
+    (some valid-claim? (:claims task))
+    (catch Exception e
+      (prn task)
+      (throw e))))
 
 (declare completed?)
 
