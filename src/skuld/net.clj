@@ -5,7 +5,8 @@
   (:require [clojure.edn :as edn]
             [taoensso.nippy :as nippy]
             [skuld.flake :as flake]
-            [clojure.stacktrace :as trace])
+            [clojure.stacktrace :as trace]
+            [hexdump.core :as hex])
   (:use clojure.tools.logging
         skuld.util) 
   (:import (com.aphyr.skuld Bytes)
@@ -89,8 +90,12 @@
         (.readBytes buffer a)
 ;      (with-open [is (ByteBufInputStream. buffer)
 ;                  dis (DataInputStream. is)]
-        (binding [*read-eval* false]
-          (nippy/thaw a))))))
+;        (try
+          (binding [*read-eval* false]
+            (nippy/thaw a))))))
+;          (catch Exception e
+;            (hex/hexdump (seq a))
+;            (throw e)))
 
 (defn handler
   "Returns a Netty handler that calls f with its messages, and writes non-nil
