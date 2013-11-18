@@ -1,15 +1,15 @@
 (ns skuld.http
   "An HTTP interface to a Skuld node."
-  (:require [cheshire.core :as json]
-            [cheshire.generate :refer [add-encoder encode-str]]
-            [clout.core :refer [route-compile route-matches]]
+  (:require [cheshire.core             :as json]
+            [cheshire.generate         :refer [add-encoder encode-str]]
+            [clout.core                :refer [route-compile route-matches]]
             [clojure.data.codec.base64 :as b64]
-            [clojure.tools.logging :refer :all]
-            [clojure.walk :refer [keywordize-keys]]
-            [ring.adapter.jetty :refer [run-jetty]]
-            [ring.middleware.json :refer [wrap-json-body]]
-            [ring.util.codec :refer [form-decode]]
-            [skuld.node :as node])
+            [clojure.tools.logging     :refer :all]
+            [clojure.walk              :refer [keywordize-keys]]
+            [ring.adapter.jetty        :refer [run-jetty]]
+            [ring.middleware.json      :refer [wrap-json-body]]
+            [ring.util.codec           :refer [form-decode]]
+            [skuld.node                :as node])
   (:import [com.aphyr.skuld Bytes]
            [com.fasterxml.jackson.core JsonGenerator JsonParseException]
            [org.eclipse.jetty.server Server]))
@@ -32,7 +32,7 @@
 
 (def ^:private ok-response (partial http-response 200))
 (def ^:private bad-request (partial http-response 400))
-(def ^:static ^:private not-found (http-response 404 "Not Found"))
+(def ^:private not-found (partial http-response 404))
 
 (defn- serialize
   "Given a request map and a response body, serializes the response body first
@@ -53,7 +53,7 @@
     (if (= (:request-method req) allowed-method)
       (if resp-body
         (apply http-resp (serialize req resp-body))
-        not-found)
+        (not-found "Not Found"))
       (http-response 405 "Method Not Allowed"))))
 
 (def ^:private GET (partial endpoint :get))
@@ -110,13 +110,15 @@
                               (let [err {:error "Missing required params"}]
                                 (POST req err bad-request)))
       "/tasks/list"         (GET req (node/list-tasks node {}))
-
-      ;; TODO: Return 404 when :id doesn't exist?
       "/tasks/:id"          :>> (fn [{:keys [id]}]
                                   (let [r (-> req :query-params :r)
                                         msg {:id (b64->id id) :r (parse-int r)}
                                         ret (node/get-task node msg)]
-                                    (GET req (dissoc ret :responses))))
+                                    (if-not (-> ret :task :id)
+                                      (GET req
+                                           {:error "No such task"}
+                                           not-found)
+                                      (GET req (dissoc ret :responses)))))
       "/request-vote"       (let [part (-> req :body :partition)
                                   msg {:partition part}]
                               (POST req (node/request-vote! node msg)))

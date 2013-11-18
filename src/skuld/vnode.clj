@@ -146,7 +146,7 @@
                                   :cohort (:cohort msg)
                                   :leader (:leader msg)
                                   :updated true}
-                                 (assoc state dissoc :updated)))))]
+                                 (dissoc state :updated)))))]
         (when (:updated state)
           (suppress-election! vnode msg)
           (llog (net-id vnode) (:partition vnode)

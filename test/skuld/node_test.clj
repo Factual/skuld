@@ -394,3 +394,12 @@
         data (-> resp :body (json/parse-string true))]
     (is (= 400 (:status resp)))
     (is (= {:error "Missing required params"} data))))
+
+(deftest missing-task-http-test
+  (let [resp (http/get "http://127.0.0.1:13100/tasks/foo"
+                       {:throw-exceptions false})
+        content-type (get-in resp [:headers "content-type"])
+        data (-> resp :body (json/parse-string true))]
+    (is (= 404 (:status resp)))
+    (is (= "application/json;charset=utf-8" content-type))
+    (is (= {:error "No such task"}))))
