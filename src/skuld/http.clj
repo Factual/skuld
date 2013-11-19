@@ -66,30 +66,27 @@
 
 (defn- parse-int
   "Safely coerces a string into an integer. If the conversion is impossible,
-  returns a fallback value if provided or 0."
+  returns a fallback value if provided or nil."
   [s & [fallback]]
   (try (Integer/parseInt s)
     (catch Exception e
-      (or fallback 0))))
+      fallback)))
 
 (defn- make-handler
   "Given a node, constructs the handler function. Returns a response map."
   [node]
   (fn [req]
     (condp route-matches req
-      "/queue/count"        (GET req (node/count-queue node {}))
-
-      ;; TODO: Make sure we return something meaningful to the client
-      "/tasks/claim/:id"    :>> (fn [{:keys [id]}]
-                                  (let [msg {:id (b64->id id)}
-                                        ret (node/claim! node msg)
-                                        cnt (-> ret :task :claims count dec)]
-                                    (GET req {:claim-id cnt})))
+      "/queue/count"        (let [r (-> req :query-params :r parse-int)]
+                              (GET req (node/count-queue node {:r r})))
+      "/tasks/claim"        (let [dt (-> req :query-params :dt parse-int)
+                                  ret (node/claim! node {:dt dt})]
+                              (GET req (dissoc ret :request-id)))
       "/tasks/complete/:id" :>> (fn [{:keys [id]}]
                                   (let [id  (b64->id id)
-                                        idx (-> req :query-params :idx)
-                                        msg {:task-id  id
-                                             :claim-id (parse-int idx)}
+                                        cid (-> req :query-params :cid)
+                                        msg {:task-id id
+                                             :claim-id (parse-int cid)}
                                         ret (node/complete! node msg)]
                                     (GET req (dissoc ret :responses))))
       "/tasks/count"        (GET req (node/count-tasks node {}))
@@ -99,7 +96,9 @@
                                      ;; avoid passing bad params to
                                      ;; `node/enqueue!`
                                      task (-> req :body :task)]
-                              (try (let [ret (node/enqueue! node {:task task})]
+                              (try (let [w   (-> req :body :w)
+                                         msg {:task task :w w}
+                                         ret (node/enqueue! node msg)]
                                      (POST req (dissoc ret :responses)))
                                 ;; Handle vnode assertion; return an error to
                                 ;; the client
@@ -111,8 +110,8 @@
                                 (POST req err bad-request)))
       "/tasks/list"         (GET req (node/list-tasks node {}))
       "/tasks/:id"          :>> (fn [{:keys [id]}]
-                                  (let [r (-> req :query-params :r)
-                                        msg {:id (b64->id id) :r (parse-int r)}
+                                  (let [r   (-> req :query-params :r parse-int)
+                                        msg {:id (b64->id id) :r r}
                                         ret (node/get-task node msg)]
                                     (if-not (-> ret :task :id)
                                       (GET req
