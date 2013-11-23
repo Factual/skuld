@@ -3,10 +3,10 @@
   connections encapsulated in a single stateful component. Allows users to
   register callbacks to receive messages."
   (:require [clojure.edn :as edn]
-            [taoensso.nippy :as nippy]
             [skuld.flake :as flake]
             [clojure.stacktrace :as trace]
-            [hexdump.core :as hex])
+            [hexdump.core :as hex]
+            [skuld.util :refer [fress-read fress-write]])
   (:use clojure.tools.logging
         skuld.util) 
   (:import (com.aphyr.skuld Bytes)
@@ -78,12 +78,12 @@
 ;          (debug "Got" (.toString buffer (Charset/forName "UTF-8")))
           (edn/read r))))))
 
-(defn nippy-codec []
+(defn fressian-codec []
   (proxy [MessageToMessageCodec]
     [(into-array Class [ByteBuf]) (into-array Class [Object])]
 
     (encode [^ChannelHandlerContext ctx object]
-      (->> object nippy/freeze Unpooled/wrappedBuffer))
+      (-> object fress-write Unpooled/wrappedBuffer))
 
     (decode [^ChannelHandlerContext ctx ^ByteBuf buffer]
       (let [a (byte-array (.readableBytes buffer))]
@@ -92,7 +92,7 @@
 ;                  dis (DataInputStream. is)]
 ;        (try
           (binding [*read-eval* false]
-            (nippy/thaw a))))))
+            (fress-read a))))))
 ;          (catch Exception e
 ;            (hex/hexdump (seq a))
 ;            (throw e)))
@@ -140,7 +140,7 @@
                   (pipeline)
                   (addLast "fdecoder" (protobuf-varint32-frame-decoder))
                   (addLast "fencoder" protobuf-varint32-frame-encoder)
-                  (addLast "codec" (nippy-codec))
+                  (addLast "codec" (fressian-codec))
                   (addLast event-executor "handler"
                           (handler @(:handler node))))))))
 
@@ -200,7 +200,7 @@
                           (pipeline)
                           (addLast "fdecoder" (protobuf-varint32-frame-decoder))
                           (addLast "fencoder" protobuf-varint32-frame-encoder)
-                          (addLast "codec" (nippy-codec))
+                          (addLast "codec" (fressian-codec))
                           (addLast "inactive" (inactive-client-handler node))
                           (addLast event-executor "handler"
                                   (client-response-handler node)))))))
