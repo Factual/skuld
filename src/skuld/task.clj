@@ -62,7 +62,6 @@
   (try
     (some valid-claim? (:claims task))
     (catch Exception e
-      (prn task)
       (throw e))))
 
 (declare completed?)
