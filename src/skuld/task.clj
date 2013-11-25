@@ -13,22 +13,8 @@
   (:refer-clojure :exclude [merge])
   (:use skuld.util)
   (:require [skuld.flake :as flake]
-            [taoensso.nippy :as nippy])
-  (:import com.aphyr.skuld.Bytes
-           (java.io DataOutputStream
-                    DataInputStream)))
-
-; These probably don't belong here, but it seemed as good a place as anywhere
-; else. Maybe move to util?
-(nippy/extend-freeze Bytes 1
-                     [^Bytes b ^DataOutputStream out]
-                     (.write out (.bytes b) 0 (alength (.bytes b))))
-
-(nippy/extend-thaw 1
-                   [^DataInputStream in]
-                   (let [bytes (byte-array 20)]
-                     (.read in bytes)
-                     (Bytes. bytes))) ; nom nom nom
+            [skuld.util :refer [fress-read fress-write]])
+  (:import com.aphyr.skuld.Bytes))
 
 (def clock-skew-buffer
   "We allow nodes and clocks to drift by this much."
@@ -62,7 +48,6 @@
   (try
     (some valid-claim? (:claims task))
     (catch Exception e
-      (prn task)
       (throw e))))
 
 (declare completed?)
