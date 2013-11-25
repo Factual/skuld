@@ -2,8 +2,8 @@
   (:import (java.io Closeable)
            (com.aphyr.skuld Bytes))
   (:require [clj-leveldb :as level]
-            [taoensso.nippy :as nippy]
-            [skuld.task :as task])
+            [skuld.task :as task]
+            [skuld.util :refer [fress-read fress-write]])
   (:use skuld.db
         clojure.tools.logging))
 
@@ -67,7 +67,7 @@
   :data-dir"
   [opts]
   (let [level (level/create-db (path! (assoc opts :ext "level"))
-                               {:val-decoder #(and % (nippy/thaw %))
-                                :val-encoder #(and % (nippy/freeze %))})
+                               {:val-decoder #(and % (fress-read %))
+                                :val-encoder #(and % (fress-write %))})
         c (count (level/iterator level))]
     (Level. level (atom c))))

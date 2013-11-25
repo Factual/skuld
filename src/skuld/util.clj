@@ -1,8 +1,11 @@
 (ns skuld.util
   "An Kitsch Sink"
   (:require
+    [clojure.data.fressian :as fress]
     [primitive-math :as p])
   (:import
+    [com.aphyr.skuld Bytes]
+    [org.fressian.handlers ReadHandler WriteHandler]
     [java.util
      Collection
      PriorityQueue]))
@@ -103,3 +106,30 @@
        (if-not (zero? x#)
          x#
          (compare+ ~a ~b ~@fs)))))
+
+;; Fressian
+(def ^:private bytes-write-handler
+  {Bytes
+    {"skuld-bytes"
+      (reify WriteHandler
+        (fress/write [_ w bs]
+          (.writeTag w "skuld-bytes" 1)
+          (.writeBytes w (.bytes ^Bytes bs))))}})
+
+(def ^:private bytes-read-handler
+   {"skuld-bytes"
+    (reify ReadHandler (fress/read [_ rdr tag component-count]
+                         (Bytes. (.readObject rdr))))})
+
+(def ^:private skuld-write-handlers
+  (-> (conj bytes-write-handler fress/clojure-write-handlers)
+    fress/associative-lookup
+    fress/inheritance-lookup))
+
+(def ^:private skuld-read-handlers
+  (fress/associative-lookup (conj bytes-read-handler
+                                  fress/clojure-read-handlers)))
+
+(defn fress-write [x] (fress/write x :handlers skuld-write-handlers))
+
+(defn fress-read [x] (fress/read x :handlers skuld-read-handlers))
