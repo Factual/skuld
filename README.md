@@ -182,32 +182,22 @@ Some previous cohort of nodes belonging to the old epoch, tracked by ZooKeeper.
 To become a leader, one must successfully:
 
 1. Read the previous epoch+cohort from ZooKeeper
-
 2. (optimization) Ensure that the previous epoch is strictly less than the
 epoch this node is going to be the leader for.
-
 3. Broadcast a claim message to the new cohort, union the old cohort
-
 4. Receive votes from a majority of the nodes in the old cohort
-
 5. Receive votes from a majority of the nodes in the new cohort
-
   - At this juncture, neither the new nor the old cohort can commit claims
 for our target epoch or lower, making the set of claims made in older epochs
 immutable. If we are beat by another node using a newer epoch, it will have
 recovered a superset of those claims; we'll fail to CAS in step 8, and no
 claims will be lost.
-
 6. Obtain all claims from a majority of the old cohort, and union them in to
 our local claim set.
-
   - This ensures that we are aware of all claims made prior to our epoch.
-
 7. Broadcast our local claim set to a majority of the new cohort.
-
   - This ensures that any *future* epoch will correctly recover our claim
     set. 6 + 7 provide a continuous history of claims, by induction.
-
 8. CAS our new epoch and cohort into ZooKeeper, ensuring that nobody else
    beat us to it.
 
@@ -230,7 +220,7 @@ overlap.
 
 ## Getting started
 
-You'll need a ZooKeeper cluster, and lein 2. To create a cluster, run:
+You'll need a ZooKeeper cluster, and lein 2. On OS X you will also need Java 1.7. To create a cluster, run:
 
 ```
 lein run cluster create skuld -z some.zk.node:2181 --partitions 8 --replicas 3
