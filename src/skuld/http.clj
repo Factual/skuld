@@ -72,51 +72,65 @@
     (catch Exception e
       fallback)))
 
+(defn- queue-count [node req]
+  (let [r (-> req :query-params :r parse-int)]
+    (GET req (node/count-queue node {:r r}))))
+
+(defn- claim-task [node req]
+  (let [dt (-> req :body :dt)
+        ret (node/claim! node {:dt dt})]
+    (POST req (dissoc ret :request-id))))
+
+(defn- complete-task [node req id]
+  (let [id  (b64->id id)
+        cid (-> req :body :cid)
+        msg {:task-id id :claim-id cid}
+        ret (node/complete! node msg)]
+    (POST req (dissoc ret :responses))))
+
+(defn- count-tasks [node req]
+  (GET req (node/count-tasks node {})))
+
+(defn- enqueue-task [node req]
+  (if-let [;; Explicitly suck out the task key to avoid passing bad params to
+           ;; `node/enqueue!`
+           task (-> req :body :task)]
+    (try (let [w   (-> req :body :w)
+               msg {:task task :w w}
+               ret (node/enqueue! node msg)]
+           (POST req (dissoc ret :responses)))
+         ;; Handle vnode assertion; return an error to
+         ;; the client
+         (catch java.lang.AssertionError e
+           (let [err {:error (.getMessage e)}]
+             (POST req err bad-request))))
+              ;; Missing parameters, i.e. POST body
+              (let [err {:error "Missing required params"}]
+                (POST req err bad-request))))
+
+(defn- list-tasks [node req]
+  (GET req (node/list-tasks node {})))
+
+(defn- get-task [node req id]
+  (let [r   (-> req :query-params :r parse-int)
+        msg {:id (b64->id id) :r r}
+        ret (node/get-task node msg)]
+    (if-not (-> ret :task :id)
+      (GET req {:error "No such task"} not-found)
+      (GET req (dissoc ret :responses)))))
+
 (defn- make-handler
   "Given a node, constructs the handler function. Returns a response map."
   [node]
   (fn [req]
     (condp route-matches req
-      "/queue/count"        (let [r (-> req :query-params :r parse-int)]
-                              (GET req (node/count-queue node {:r r})))
-      "/tasks/claim"        (let [dt (-> req :body :dt)
-                                  ret (node/claim! node {:dt dt})]
-                              (POST req (dissoc ret :request-id)))
-      "/tasks/complete/:id" :>> (fn [{:keys [id]}]
-                                  (let [id  (b64->id id)
-                                        cid (-> req :body :cid)
-                                        msg {:task-id id :claim-id cid}
-                                        ret (node/complete! node msg)]
-                                    (POST req (dissoc ret :responses))))
-      "/tasks/count"        (GET req (node/count-tasks node {}))
-
-      ;; TODO: The `/tasks/enqueue` endpoint is pretty messy currently
-      "/tasks/enqueue"      (if-let [;; Explicitly suck out the task key to
-                                     ;; avoid passing bad params to
-                                     ;; `node/enqueue!`
-                                     task (-> req :body :task)]
-                              (try (let [w   (-> req :body :w)
-                                         msg {:task task :w w}
-                                         ret (node/enqueue! node msg)]
-                                     (POST req (dissoc ret :responses)))
-                                ;; Handle vnode assertion; return an error to
-                                ;; the client
-                                (catch java.lang.AssertionError e
-                                  (let [err {:error (.getMessage e)}]
-                                    (POST req err bad-request))))
-                              ;; Missing parameters, i.e. POST body
-                              (let [err {:error "Missing required params"}]
-                                (POST req err bad-request)))
-      "/tasks/list"         (GET req (node/list-tasks node {}))
-      "/tasks/:id"          :>> (fn [{:keys [id]}]
-                                  (let [r   (-> req :query-params :r parse-int)
-                                        msg {:id (b64->id id) :r r}
-                                        ret (node/get-task node msg)]
-                                    (if-not (-> ret :task :id)
-                                      (GET req
-                                           {:error "No such task"}
-                                           not-found)
-                                      (GET req (dissoc ret :responses)))))
+      "/queue/count"        (queue-count node req)
+      "/tasks/claim"        (claim-task node req)
+      "/tasks/complete/:id" :>> (fn [{:keys [id]}] (complete-task node req id))
+      "/tasks/count"        (count-tasks node req)
+      "/tasks/enqueue"      (enqueue-task node req)
+      "/tasks/list"         (list-tasks node req)
+      "/tasks/:id"          :>> (fn [{:keys [id]}] (get-task node req id))
       not-found)))
 
 ;; Lifted from `ring.middleware.params`
