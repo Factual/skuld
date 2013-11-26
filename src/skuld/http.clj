@@ -17,7 +17,7 @@
 (defn- encode-bytes
   "Encode a bytes to the json generator."
   [^Bytes b ^JsonGenerator jg]
-  (.writeString jg (-> ^Bytes b .bytes ^String b64/encode String.)))
+  (.writeString jg (-> ^Bytes b .bytes b64/encode String.)))
 
 ;; Custom Cheshire encoder for the Bytes type
 (add-encoder Bytes encode-bytes)
@@ -79,16 +79,15 @@
     (condp route-matches req
       "/queue/count"        (let [r (-> req :query-params :r parse-int)]
                               (GET req (node/count-queue node {:r r})))
-      "/tasks/claim"        (let [dt (-> req :query-params :dt parse-int)
+      "/tasks/claim"        (let [dt (-> req :body :dt)
                                   ret (node/claim! node {:dt dt})]
-                              (GET req (dissoc ret :request-id)))
+                              (POST req (dissoc ret :request-id)))
       "/tasks/complete/:id" :>> (fn [{:keys [id]}]
                                   (let [id  (b64->id id)
-                                        cid (-> req :query-params :cid)
-                                        msg {:task-id id
-                                             :claim-id (parse-int cid)}
+                                        cid (-> req :body :cid)
+                                        msg {:task-id id :claim-id cid}
                                         ret (node/complete! node msg)]
-                                    (GET req (dissoc ret :responses))))
+                                    (POST req (dissoc ret :responses))))
       "/tasks/count"        (GET req (node/count-tasks node {}))
 
       ;; TODO: The `/tasks/enqueue` endpoint is pretty messy currently
@@ -118,10 +117,6 @@
                                            {:error "No such task"}
                                            not-found)
                                       (GET req (dissoc ret :responses)))))
-      "/request-vote"       (let [part (-> req :body :partition)
-                                  msg {:partition part}]
-                              (POST req (node/request-vote! node msg)))
-      "/wipe"               (GET req (node/wipe! node {}))
       not-found)))
 
 ;; Lifted from `ring.middleware.params`

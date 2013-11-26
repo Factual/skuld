@@ -296,34 +296,6 @@
                          {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
 
-;; TODO: Actually test the vote request happened
-(deftest request-vote-http-test
-  (let [part (-> *nodes* first :vnodes deref first second :partition)
-        resp (http/post "http://127.0.0.1:13100/request-vote"
-                        {:form-params {:partition part}
-                         :content-type :json
-                         :as :json})
-        content-type (get-in resp [:headers "content-type"])]
-    (is (= 200 (:status resp)))
-    (is (= "application/json;charset=utf-8" content-type))))
-
-(deftest wipe-http-test
-  (http/post "http://127.0.0.1:13100/tasks/enqueue"
-             {:form-params {:task {:data "foo2"} :w 3}
-              :content-type :json})
-
-  (let [resp (http/get "http://127.0.0.1:13100/tasks/count" {:as :json})
-        n (-> resp :body :count)]
-    (is (= n 1)))
-
-  (let [resp (http/get "http://127.0.0.1:13100/wipe")
-        content-type (get-in resp [:headers "content-type"])
-        resp* (http/get "http://127.0.0.1:13100/tasks/count" {:as :json})
-        n (-> resp* :body :count)]
-    (is (= 200 (:status resp)))
-    (is (= "application/json;charset=utf-8" content-type))
-    (is (= n 0))))
-
 (deftest complete-http-test
   (elect! *nodes*)
 
@@ -339,8 +311,10 @@
     (is (= claims []))
 
     ;; Now let's claim a task, i.e. the task we just enqueued
-    (let [resp (http/get "http://127.0.0.1:13100/tasks/claim?dt=300000"
-                         {:as :json})
+    (let [resp (http/post "http://127.0.0.1:13100/tasks/claim"
+                          {:form-params {:dt 300000}
+                           :content-type :json
+                           :as :json})
           content-type (get-in resp [:headers "content-type"])
           id* (-> resp :body :task :id)
           resp* (http/get (str "http://127.0.0.1:13100/tasks/" id "?r=3")
@@ -353,8 +327,10 @@
       (is (not= claims []))
 
       ;; Finally let's complete it
-      (let [uri (str "http://127.0.0.1:13100/tasks/complete/" id "?cid=" cid)
-            resp (http/get uri {:as :json})
+      (let [uri (str "http://127.0.0.1:13100/tasks/complete/" id)
+            resp (http/post uri {:form-params {:cid cid}
+                                 :content-type :json
+                                 :as :json})
             content-type (get-in resp [:headers "content-type"])
             resp* (http/get (str "http://127.0.0.1:13100/tasks/" id "?r=3")
                             {:as :json})
