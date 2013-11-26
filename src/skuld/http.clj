@@ -72,26 +72,36 @@
     (catch Exception e
       fallback)))
 
-(defn- queue-count [node req]
+(defn- count-queue
+  "Like `node/count-queue`, but wrapped around an HTTP request."
+  [node req]
   (let [r (-> req :query-params :r parse-int)]
     (GET req (node/count-queue node {:r r}))))
 
-(defn- claim-task [node req]
+(defn- claim!
+  "Like `node/claim!`, but wrapped around an HTTP request."
+  [node req]
   (let [dt (-> req :body :dt)
         ret (node/claim! node {:dt dt})]
     (POST req (dissoc ret :request-id))))
 
-(defn- complete-task [node req id]
+(defn- complete!
+  "Like `node/complete!`, but wrapped around an HTTP request."
+  [node req id]
   (let [id  (b64->id id)
         cid (-> req :body :cid)
         msg {:task-id id :claim-id cid}
         ret (node/complete! node msg)]
     (POST req (dissoc ret :responses))))
 
-(defn- count-tasks [node req]
+(defn- count-tasks
+  "Like `node/count-tasks`, but wrapped around an HTTP request."
+  [node req]
   (GET req (node/count-tasks node {})))
 
-(defn- enqueue-task [node req]
+(defn- enqueue!
+  "Like `node/enqueue!`, but wrapped around an HTTP request."
+  [node req]
   (if-let [;; Explicitly suck out the task key to avoid passing bad params to
            ;; `node/enqueue!`
            task (-> req :body :task)]
@@ -108,10 +118,14 @@
               (let [err {:error "Missing required params"}]
                 (POST req err bad-request))))
 
-(defn- list-tasks [node req]
+(defn- list-tasks
+  "Like `node/list-tasks`, but wrapped around an HTTP request."
+  [node req]
   (GET req (node/list-tasks node {})))
 
-(defn- get-task [node req id]
+(defn- get-task
+  "Like `node/get-task`, but wrapped around an HTTP request."
+  [node req id]
   (let [r   (-> req :query-params :r parse-int)
         msg {:id (b64->id id) :r r}
         ret (node/get-task node msg)]
@@ -124,11 +138,11 @@
   [node]
   (fn [req]
     (condp route-matches req
-      "/queue/count"        (queue-count node req)
-      "/tasks/claim"        (claim-task node req)
-      "/tasks/complete/:id" :>> (fn [{:keys [id]}] (complete-task node req id))
+      "/queue/count"        (count-queue node req)
+      "/tasks/claim"        (claim! node req)
+      "/tasks/complete/:id" :>> (fn [{:keys [id]}] (complete! node req id))
       "/tasks/count"        (count-tasks node req)
-      "/tasks/enqueue"      (enqueue-task node req)
+      "/tasks/enqueue"      (enqueue! node req)
       "/tasks/list"         (list-tasks node req)
       "/tasks/:id"          :>> (fn [{:keys [id]}] (get-task node req id))
       not-found)))
