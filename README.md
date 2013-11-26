@@ -230,7 +230,7 @@ overlap.
 
 ## Getting started
 
-You'll need a ZooKeeper cluster, and lein 2. To create a cluster, run:
+You'll need a ZooKeeper cluster, and lein 2. On OS X you also need to be running Java 1.7. To create a cluster, run:
 
 ```
 lein run cluster create skuld -z some.zk.node:2181 --partitions 8 --replicas 3
