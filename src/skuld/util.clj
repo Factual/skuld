@@ -107,6 +107,8 @@
          x#
          (compare+ ~a ~b ~@fs)))))
 
+(type [])
+
 ;; Fressian
 (def ^:private bytes-write-handler
   {Bytes
@@ -114,12 +116,21 @@
       (reify WriteHandler
         (fress/write [_ w bs]
           (.writeTag w "skuld-bytes" 1)
-          (.writeBytes w (.bytes ^Bytes bs))))}})
+          (.writeBytes w (.bytes ^Bytes bs))))}
+   clojure.lang.PersistentVector
+    {"vector"
+     (reify WriteHandler
+       (fress/write [_ w s]
+         (.writeTag w "vector" 1)
+         (.writeList w s)))}})
 
 (def ^:private bytes-read-handler
    {"skuld-bytes"
     (reify ReadHandler (fress/read [_ rdr tag component-count]
-                         (Bytes. (.readObject rdr))))})
+                         (Bytes. (.readObject rdr))))
+    "vector"
+    (reify ReadHandler (fress/read [_ rdr tag component-count]
+                         (vec (.readObject rdr))))})
 
 (def ^:private skuld-write-handlers
   (-> (conj bytes-write-handler fress/clojure-write-handlers)
