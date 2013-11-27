@@ -310,6 +310,11 @@ skuld.bin=> (pprint (get-task c (:id t2)))
 nil
 ```
 
+Below is the namespace dependency graph for Skuld.
+
+<img src="https://raw.github.com/Factual/skuld/master/doc/ns-dep-graph.png" style="width: 100%" />
+
+
 ## How can I help?
 
 Hop on #skuld on Freenode, or hit me up at
