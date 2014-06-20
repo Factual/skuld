@@ -1,5 +1,6 @@
 (ns skuld.zk-test
   "Supports zookeeper testing."
+  (:require [skuld.logging :as logging])
   (:import (org.apache.curator.test TestingServer)))
 
 (defmacro with-zk
@@ -11,9 +12,11 @@
     (connect-to zk-string)
     ...)"
   [[connect-string] & body]
-  `(let [zk#             (TestingServer.)
-         ~connect-string (.getConnectString zk#)]
-     (try
-       ~@body
-       (finally
-         (.close zk#)))))
+  `(logging/suppress
+     ["org.apache.zookeeper" "org.apache.helix" "org.apache.curator" "org.I0Itec.zkclient"]
+     (let [zk#             (TestingServer.)
+           ~connect-string (.getConnectString zk#)]
+       (try
+         ~@body
+         (finally
+           (.close zk#))))))

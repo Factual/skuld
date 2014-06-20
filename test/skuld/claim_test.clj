@@ -14,11 +14,13 @@
             [skuld.task    :as task]
             [skuld.aae     :as aae]
             [clojure.set   :as set]
+            [skuld.logging :as logging]
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
 
 (use-fixtures :once once)
 (use-fixtures :each each)
+
 
 (deftest claim-test
   (elect! *nodes*)

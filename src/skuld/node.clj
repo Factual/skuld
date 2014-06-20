@@ -546,7 +546,7 @@
   "Blocks until all partitions are known to exist on a peer, then returns node."
   [node]
   (while (empty? (all-partitions node))
-    (prn :waiting-for-partition-list)
+    (info "waiting-for-partition-list")
     (Thread/sleep 10))
 
   (while (->> node
