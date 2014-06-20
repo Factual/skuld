@@ -48,12 +48,6 @@
 
 ;; Leaders
 
-(defmacro llog
-  "Log leader election messages"
-  [& args]
-  `(locking *out*
-    (info ~@args)))
-
 (defn peers
   "Peers for this vnode."
   [vnode]
@@ -149,7 +143,7 @@
                                  (dissoc state :updated)))))]
         (when (:updated state)
           (suppress-election! vnode msg)
-          (llog (net-id vnode) (:partition vnode)
+          (info (net-id vnode) (:partition vnode)
                 "assuming epoch" leader-epoch)
           state)))))
 
@@ -286,14 +280,14 @@
   we inform all zombies which are not a part of our new cohort that it is safe
   to drop their claim set."
   [vnode]
-  (llog (net-id vnode) (:partition vnode) "initiating election")
+  (info (net-id vnode) (:partition vnode) "initiating election")
   (locking vnode
     (when (active? vnode)
-      (llog :active)
+      (info (net-id vnode) "node is active")
 
       (when (< (+ @(:last-leader-msg-time vnode) election-timeout)
                (flake/linear-time))
-        (llog "leader is outdated")
+        (info (net-id vnode) "leader is outdated")
 
         ; First, compute the set of peers that will comprise the next epoch.
         (let [self       (net-id vnode)
@@ -314,7 +308,7 @@
           (if (<= epoch (:epoch old))
             ; We're outdated; fast-forward to the new epoch.
             (do
-              (llog "Outdated epoch relative to ZK; aborting election")
+              (info (net-id vnode) "Outdated epoch relative to ZK; aborting election")
               (swap! (:state vnode) (fn [state]
                                       (if (<= (:epoch state) (:epoch old))
                                         (merge state {:epoch (:epoch old)
@@ -328,8 +322,7 @@
                   responses   (atom (list))
                   accepted?   (promise)
                   peers       (disj (set/union new-cohort old-cohort) self)]
-              (llog :old old-cohort)
-              (llog :new new-cohort)
+              (info (net-id vnode) :old old-cohort :new new-cohort)
               (doseq [node peers]
                 (net/req! (:net vnode) (list node) {:r 1}
                           {:type :request-vote
@@ -343,33 +336,33 @@
                               ; Cancel request; we saw a newer epoch from a peer.
                               (do
                                 (deliver accepted? false)
-                                (llog (net-id vnode) (:partition vnode)
+                                (info (net-id vnode) (:partition vnode)
                                       "aborting candidacy due to newer epoch"))
                               ; Have we enough votes?
                               (if (sufficient-votes? vnode old-cohort new-cohort rs)
                                 (do
                                   (deliver accepted? true)
-                                  (llog "Received enough votes:" rs))
+                                  (info (net-id vnode) "Received enough votes:" rs))
                                 (when (<= (count peers) (count rs))
                                   (deliver accepted? false)
-                                  (llog "All votes in; giving up.")))))))
+                                  (info (net-id vnode) "All votes in; giving up.")))))))
 
               ; Await responses
               (if-not (deref accepted? 5000 false)
-                (llog (net-id vnode) (:partition vnode)
+                (info (net-id vnode) (:partition vnode)
                       "election failed; not enough votes")
 
                 ; Sync from old cohort.
                 (if-not (sync-with-majority! vnode
                                              old-cohort
                                              skuld.aae/sync-from!)
-                  (llog "Wasn't able to replicate from enough of old cohort; cannot become leader.")
+                  (info (net-id vnode) "Wasn't able to replicate from enough of old cohort; cannot become leader.")
 
                   ; Sync to new cohort.
                   (if-not (sync-with-majority! vnode
                                                new-cohort
                                                skuld.aae/sync-to!)
-                    (error "Wasn't able to replicate to enough of new cohort; cannot become leader.")
+                    (error (net-id vnode) "Wasn't able to replicate to enough of new cohort; cannot become leader.")
 
                     ; Update ZK with new cohort and epoch--but only if nobody else
                     ; got there first.
@@ -381,7 +374,7 @@
                                                          new-leader
                                                          current)))]
                       (if (not= new-leader set-leader)
-                        (llog (net-id vnode) (:partition vnode)
+                        (info (net-id vnode) (:partition vnode)
                               "election failed: another leader updated zk")
 
                         ; Success!
@@ -393,7 +386,7 @@
                                                ; We voted for someone else in the
                                                ; meantime
                                                state)))]
-                          (llog (net-id vnode) (:partition vnode)
+                          (info (net-id vnode) (:partition vnode)
                                 "election successful: cohort now" epoch new-cohort))))))))))))))
 
 ;; Tasks
