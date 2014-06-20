@@ -3,6 +3,10 @@ lein: lein2
 jdk:
   - openjdk7
   - oraclejdk7
+
+before_script:
+  - export JVM_OPTS="-Xmx2g"
+
 branches:
   except:
     - gh-pages

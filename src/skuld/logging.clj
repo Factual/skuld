@@ -56,13 +56,16 @@
     (nil? logger-pattern)
     (list root-logger)
 
+    (instance? Logger logger-pattern)
+    (list logger-pattern)
+
     (string? logger-pattern)
     (list (LoggerFactory/getLogger ^String logger-pattern))
 
     :else (filter (comp (partial re-find logger-pattern) logger-name)
                   (all-loggers))))
 
-(defn get-logger
+(defn ^Logger get-logger
   [logger-pattern]
   (first (get-loggers logger-pattern)))
 
@@ -72,8 +75,9 @@
   (set-level (get-logger \"skuld.node\") :debug)"
   ([level]
    (set-level root-logger level))
-  ([^Logger logger level]
-    (.setLevel logger (level-for level))))
+  ([logger-pattern level]
+   (doseq [logger (get-loggers logger-pattern)]
+     (.setLevel logger (level-for level)))))
 
 (defmacro with-level
   "Sets logging for the evaluation of body to the desired level."

@@ -99,28 +99,23 @@
 (defn once
   [f]
   (with-zk [zk]
-    ; Set up cluster
-    (let [admin (admin zk)]
-      (try
-        (logging/mute (ensure-cluster! admin))
-        (admin/shutdown! admin)))
+           ; Set up cluster
+           (let [admin (admin zk)]
+             (try
+               (ensure-cluster! admin)
+               (admin/shutdown! admin)))
 
-    ; Set up nodes
-    (logging/suppress [#"^org\.apache\.helix"
-                       #"^org\.apache\.zookeeper"
-                       #"^org\.apache\.curator"
-                       #"^org\.I0Itec\.zkclient"
-                       "skuld.vnode"]
-                      (binding [*zk*    zk
-                                *nodes* (start-nodes! zk)]
-                        (try
-                          (binding [*client* (client/client *nodes*)]
-                            (try
-                              (f)
-                              (finally
-                                (client/shutdown! *client*))))
-                          (finally
-                            (shutdown-nodes! *nodes*)))))))
+           ; Set up nodes
+           (binding [*zk*    zk
+                     *nodes* (start-nodes! zk)]
+             (try
+               (binding [*client* (client/client *nodes*)]
+                 (try
+                   (f)
+                   (finally
+                     (client/shutdown! *client*))))
+               (finally
+                 (shutdown-nodes! *nodes*))))))
 
 (defn each
   [f]
