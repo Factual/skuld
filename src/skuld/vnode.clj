@@ -465,7 +465,7 @@
   [vnode task-id dt]
   (let [state     (state vnode)
         cur-epoch (:epoch state)
-        cohort    (:cohort state)
+        cohort    (set (:cohort state))
         ; How many followers need to ack us?
         maj       (-> cohort
                       (disj (net-id vnode))
