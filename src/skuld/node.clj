@@ -150,7 +150,7 @@
                                  {:type :get-task-local
                                   :id   id})
         acks (remove :error responses)
-        _ (info responses)
+        _ (info (:port node) "get-task: " responses)
         task (->> responses (map :task) (reduce task/merge))]
     (if (<= r (count acks))
       {:n    (count acks)
@@ -546,7 +546,7 @@
   "Blocks until all partitions are known to exist on a peer, then returns node."
   [node]
   (while (empty? (all-partitions node))
-    (info "waiting-for-partition-list")
+    (info (:port node) "waiting-for-partition-list")
     (Thread/sleep 10))
 
   (while (->> node
