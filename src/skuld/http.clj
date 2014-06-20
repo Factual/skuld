@@ -17,7 +17,8 @@
 (defn- encode-bytes
   "Encode a bytes to the json generator."
   [^Bytes b ^JsonGenerator jg]
-  (.writeString jg (-> ^Bytes b .bytes b64/encode String.)))
+  (let [encoded (-> b .bytes b64/encode)]
+    (.writeString jg (String. ^String encoded))))
 
 ;; Custom Cheshire encoder for the Bytes type
 (add-encoder Bytes encode-bytes)
