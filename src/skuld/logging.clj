@@ -65,7 +65,7 @@
     :else (filter (comp (partial re-find logger-pattern) logger-name)
                   (all-loggers))))
 
-(defn get-logger
+(defn ^Logger get-logger
   [logger-pattern]
   (first (get-loggers logger-pattern)))
 

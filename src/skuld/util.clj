@@ -8,7 +8,8 @@
     [org.fressian.handlers ReadHandler WriteHandler]
     [java.util
      Collection
-     PriorityQueue]))
+     PriorityQueue]
+    [java.nio ByteBuffer]))
 
 (deftype SeqContainer [key-fn ^long idx s]
   Comparable
@@ -141,6 +142,6 @@
   (fress/associative-lookup (conj bytes-read-handler
                                   fress/clojure-read-handlers)))
 
-(defn fress-write [x] (fress/write x :handlers skuld-write-handlers))
+(defn ^ByteBuffer fress-write [x] (fress/write x :handlers skuld-write-handlers))
 
 (defn fress-read [x] (fress/read x :handlers skuld-read-handlers))
