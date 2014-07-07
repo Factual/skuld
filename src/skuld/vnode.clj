@@ -512,11 +512,11 @@
                                          (epoch vnode)
                                          ", claim coordinator aborting"))))
     
-    (if (<= maj successes)
-      task
-      (throw (RuntimeException. (str "needed " maj
-                                     " acks from followers, only received "
-                                     successes))))))))
+        (if (<= maj successes)
+          task
+          (throw (RuntimeException. (str "needed " maj
+                                         " acks from followers, only received "
+                                         successes))))))))
 
 (defn complete!
   "Completes the given task in the specified claim. Msg should contain:

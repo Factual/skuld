@@ -27,6 +27,14 @@
 (clojure.core/declare shutdown!)
 (in-ns 'skuld.node)
 
+;; Logging
+(defmacro trace-log
+  "Log a message with context"
+  [node & args]
+  `(let [node-prefix# (format "%s:%d:" (:host ~node) (:port ~node))]
+     (info node-prefix# ~@args)))
+
+;;
 
 (defn vnodes
   "Returns a map of partitions to vnodes for a node."
@@ -136,6 +144,7 @@
         part (partition-name node (:id task))]
     (if-let [vnode (vnode node part)]
       (do (vnode/merge-task! vnode task)
+          (trace-log node "enqueue-local: enqueued id" (:id task) "on vnode" (vnode/full-id vnode) "for task:" task)
           {:task-id (:id task)})
       {:error (str "I don't have partition" part "for task" (:id task))})))
 
@@ -150,7 +159,7 @@
                                  {:type :get-task-local
                                   :id   id})
         acks (remove :error responses)
-        _ (info (:port node) "get-task: " responses)
+        _ (trace-log node "get-task:" responses)
         task (->> responses (map :task) (reduce task/merge))]
     (if (<= r (count acks))
       {:n    (count acks)
@@ -280,6 +289,7 @@
   [node msg]
   ; Find the next task
   (let [task (when-let [id (:id (queue/poll! (:queue node)))]
+               (trace-log node "claim-local: claiming id from queue:" id)
                ; Find vnode for this task
                (let [vnode (vnode node (partition-name node id))]
                  (if-not vnode
@@ -287,7 +297,9 @@
 
                    ; Claim task from vnode
                    (try
-                     (vnode/claim! vnode id (or (:dt msg) 10000))
+                     (let [ta (vnode/claim! vnode id (or (:dt msg) 10000))]
+                       (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
+                       ta)
                      (catch Throwable t
                        (warn t "caught while claiming" id "from vnode")
                        :retry)))))]
