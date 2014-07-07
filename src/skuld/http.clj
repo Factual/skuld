@@ -138,13 +138,13 @@
   [node]
   (fn [req]
     (condp route-matches req
-      "/queue/count"        (count-queue node req)
-      "/tasks/claim"        (claim! node req)
-      "/tasks/complete/:id" :>> (fn [{:keys [id]}] (complete! node req id))
-      "/tasks/count"        (count-tasks node req)
-      "/tasks/enqueue"      (enqueue! node req)
-      "/tasks/list"         (list-tasks node req)
-      "/tasks/:id"          :>> (fn [{:keys [id]}] (get-task node req id))
+      "/queue/count"                                    (count-queue node req)
+      "/tasks/claim"                                    (claim! node req)
+      (route-compile "/tasks/complete/:id" {:id #".*"}) :>> (fn [{:keys [id]}] (complete! node req id))
+      "/tasks/count"                                    (count-tasks node req)
+      "/tasks/enqueue"                                  (enqueue! node req)
+      "/tasks/list"                                     (list-tasks node req)
+      (route-compile "/tasks/:id" {:id #".*"})          :>> (fn [{:keys [id]}] (get-task node req id))
       not-found)))
 
 ;; Lifted from `ring.middleware.params`
