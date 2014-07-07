@@ -33,9 +33,12 @@
                  (mapcat #(route/instances router :skuld % :peer))
                  set
                  (map (fn [peer]
-                        (net/send! net peer {:type :clock-sync
-                                             :node (select-keys net [:host :port])
-                                             :time (flake/linear-time)})))
+                        (try
+                          (net/send! net peer {:type :clock-sync
+                                               :node (select-keys net [:host :port])
+                                               :time (flake/linear-time)})
+                          (catch Throwable t
+                            (warn t "clock-sync to " peer)))))
                  dorun)
             (catch Throwable t
               (warn t "clock-sync caught")))

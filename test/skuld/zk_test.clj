@@ -13,7 +13,7 @@
     ...)"
   [[connect-string] & body]
   `(logging/suppress
-     ["org.apache.zookeeper" "org.apache.helix" "org.apache.curator" "org.I0Itec.zkclient"]
+     ["org.apache.zookeeper" "org.apache.helix" "org.apache.curator" "org.I0Itec.zkclient" "org.apache.zookeeper.server.SessionTrackerImpl"]
      (let [zk#             (TestingServer.)
            ~connect-string (.getConnectString zk#)]
        (try
