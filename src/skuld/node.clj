@@ -28,10 +28,15 @@
 (in-ns 'skuld.node)
 
 ;; Logging
+(defn trace-log-prefix
+  "Prefix for trace log messages"
+  [node]
+  (format "%s:%d:" (:host node) (:port node)))
+
 (defmacro trace-log
   "Log a message with context"
   [node & args]
-  `(let [node-prefix# (format "%s:%d:" (:host ~node) (:port ~node))]
+  `(let [node-prefix# (trace-log-prefix ~node)]
      (info node-prefix# ~@args)))
 
 ;;
@@ -301,7 +306,7 @@
                        (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
                        ta)
                      (catch Throwable t
-                       (warn t "caught while claiming" id "from vnode" (vnode/full-id vnode))
+                       (warn t (trace-log-prefix node) "caught while claiming" id "from vnode" (vnode/full-id vnode))
                        :retry)))))]
 
     (if (not= :retry task)
