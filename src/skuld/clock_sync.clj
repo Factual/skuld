@@ -37,6 +37,8 @@
                           (net/send! net peer {:type :clock-sync
                                                :node (select-keys net [:host :port])
                                                :time (flake/linear-time)})
+                          (catch io.netty.channel.ChannelException ex
+                            (warnf "clock-sync to {}: {}" peer ex))
                           (catch Throwable t
                             (warn t "clock-sync to " peer)))))
                  dorun)
