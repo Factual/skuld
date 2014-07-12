@@ -301,7 +301,7 @@
                        (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
                        ta)
                      (catch Throwable t
-                       (warn t "caught while claiming" id "from vnode")
+                       (warn t "caught while claiming" id "from vnode" (vnode/full-id vnode))
                        :retry)))))]
 
     (if (not= :retry task)
