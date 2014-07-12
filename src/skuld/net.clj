@@ -182,7 +182,9 @@
           (try
             (handle-response! requests id message)
             (catch Throwable t
-              (warn t "node handler caught"))))))))
+              (warn t "node handler caught")))))
+      (exceptionCaught [^ChannelHandlerContext ctx ^Throwable cause]
+        (warn cause "client handle caught exception" node)))))
 
 (defn client
   [node]
