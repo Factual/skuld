@@ -366,6 +366,8 @@
                (try (vnode/wipe! v)
                     (catch RuntimeException e nil))))
        dorun)
+  ; clear the queue
+  (.clear (:queue node))
   {})
 
 (defn request-vote!
