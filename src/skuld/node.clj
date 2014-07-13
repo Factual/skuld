@@ -208,13 +208,14 @@
 (defn count-tasks-local
   "Estimates the total number of tasks on the local node."
   [node msg]
-  {:partitions
-   (reduce (fn [counts [k vnode]]
-             (if (vnode/active? vnode)
-               (assoc counts k (vnode/count-tasks vnode))
-               counts))
-           {}
-           (vnodes node))})
+  (let [partition-counts (reduce (fn [counts [k vnode]]
+                                   (if (vnode/active? vnode)
+                                     (assoc counts k (vnode/count-tasks vnode))
+                                     counts))
+                                 {}
+                                 (vnodes node))]
+    (trace-log node "count-tasks-local:" partition-counts)
+    {:partitions partition-counts}))
 
 (defn cover
   "Returns a map of nodes to lists of partitions on that node, such that each
