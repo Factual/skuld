@@ -282,7 +282,7 @@
   (let [task (when-let [id (:id (queue/poll! (:queue node)))]
                ; Find vnode for this task
                (let [vnode (vnode node (partition-name node id))]
-                 (if-not (or vnode (vnode/leader? vnode))
+                 (if (or (not vnode) (not (vnode/leader? vnode)))
                    :retry
 
                    ; Claim task from vnode
