@@ -448,7 +448,7 @@
     (:offline :peer [part m c]
               (try
                 (locking vnodes
-                  (info (:port net) part "coming online")
+                  (trace-log net part "coming online")
                   (if-let [existing (get @vnodes part)]
                     (vnode/revive! existing)
                     (swap! vnodes assoc part
@@ -463,21 +463,21 @@
     (:offline :DROPPED [part m c]
               (try
                 (locking vnodes
-                  (info (:port net) part "dropped")
+                  (trace-log net part "dropped")
                   (when-let [vnode (get @vnodes part)]
                     (vnode/shutdown! vnode)
                     (swap! vnodes dissoc part)))
                 (catch Throwable t
-                  (fatal t (:port net) "dropping" part))))
+                  (fatal t (trace-log-prefix net) "dropping" part))))
 
     (:peer :offline [part m c]
            (try
              (locking vnodes
-               (info (:port net) part "going offline")
+               (trace-log net part "going offline")
                (when-let [v (get @vnodes part)]
                  (vnode/zombie! v)))
              (catch Throwable t
-               (fatal t (:port net) "taking" part "offline"))))))
+               (fatal t (trace-log-prefix net) "taking" part "offline"))))))
 
 (defn start-local-vnodes!
   "Spins up a local zombie vnode for any local data."
@@ -492,7 +492,7 @@
                                               :host (:host node)
                                               :port (:port node)
                                               :ext "level"}))
-                    (info (:port node) "spooling up zombie vnode" part)
+                    (trace-log node "spooling up zombie vnode" part)
                     (let [v (new-vnode node part)]
                       (vnode/zombie! v)
                       (swap! vnodes assoc part v))))))
@@ -564,7 +564,7 @@
   "Blocks until all partitions are known to exist on a peer, then returns node."
   [node]
   (while (empty? (all-partitions node))
-    (info (:port node) "waiting-for-partition-list")
+    (trace-log node "waiting-for-partition-list")
     (Thread/sleep 10))
 
   (while (->> node
