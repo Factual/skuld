@@ -406,6 +406,12 @@
       (swap! reqs dissoc id)
       ((.f req) @(.responses req)))))
 
+(defn shutdown-requests!
+  "Given a mapping of ids to Requests, expire all of the requests."
+  [requests]
+  (doseq [[id ^Request req] requests]
+    ((.f req) @(.responses req))))
+
 (defn periodically-gc-requests!
   "Starts a thread to GC requests. Returns a promise which, when set to false,
   shuts down."
@@ -509,6 +515,7 @@
     (close-conns! node)
     (shutdown-client! @(:client node))
     (shutdown-server! @(:server node))
+    (shutdown-requests! @(:requests node))
     (deliver @(:gc node) false)
     (reset! (:requests node) {})
     (reset! (:conns node) {})
