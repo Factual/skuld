@@ -62,7 +62,11 @@
 (defn shutdown-nodes!
   "Shutdown a seq of nodes."
   [nodes]
-  (->> nodes (pmap shutdown!) doall))
+  (doall
+    (pmap (fn wipe-and-shutdown [node]
+            (wipe-local! node nil)
+            (shutdown! node))
+          nodes)))
 
 (defn partition-available?
   "Given a set of vnodes for a partition, do they comprise an available
