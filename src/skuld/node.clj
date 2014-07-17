@@ -298,7 +298,7 @@
                (trace-log node "claim-local: claiming id from queue:" id)
                ; Find vnode for this task
                (let [vnode (vnode node (partition-name node id))]
-                 (if (or (not vnode) (not (vnode/leader? vnode)))
+                 (if-not vnode
                    :retry
 
                    ; Claim task from vnode
@@ -306,6 +306,9 @@
                      (let [ta (vnode/claim! vnode id (or (:dt msg) 10000))]
                        (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
                        ta)
+                     (catch IllegalStateException ex
+                       (trace-log node (format "claim-local: failed to claim {} from {}: {}" id (vnode/full-id vnode) (.getMessage ex)))
+                       :retry)
                      (catch Throwable t
                        (warn t (trace-log-prefix node) "caught while claiming" id "from vnode" (vnode/full-id vnode))
                        :retry)))))]

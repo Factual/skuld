@@ -484,7 +484,7 @@
                       dec)]
 
     (when-not (= :leader (:type state))
-      (throw (IllegalStateException. "can't initiate claim: not a leader.")))
+      (throw (IllegalStateException. (format "can't initiate claim: not a leader. current vnode type: {}" (:type state)))))
 
     ; Attempt to claim a task locally.
     (when-let [task (db/claim-task! (:db vnode) task-id dt)]
@@ -506,7 +506,7 @@
         ; Check that we're still in the same epoch; a leader could
         ; have subsumed us.
         (when (not= cur-epoch (epoch vnode))
-          (throw (RuntimeException. (str "epoch changed from "
+          (throw (IllegalStateException. (str "epoch changed from "
                                          cur-epoch
                                          " to "
                                          (epoch vnode)
@@ -514,7 +514,7 @@
     
         (if (<= maj successes)
           task
-          (throw (RuntimeException. (str "needed " maj
+          (throw (IllegalStateException. (str "needed " maj
                                          " acks from followers, only received "
                                          successes))))))))
 
