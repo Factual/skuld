@@ -17,7 +17,7 @@
 (defn- encode-bytes
   "Encode a bytes to the json generator."
   [^Bytes b ^JsonGenerator jg]
-  (.writeString jg (-> ^Bytes b .bytes b64/encode String.)))
+  (.writeString jg (-> ^Bytes b .bytes b64/encode String. (.replaceAll "\\+" "-") (.replaceAll "/" "_"))))
 
 ;; Custom Cheshire encoder for the Bytes type
 (add-encoder Bytes encode-bytes)
@@ -62,7 +62,7 @@
 (defn- b64->id
   "Coerces a base64-encoded id into a Bytes type."
   [^String b64-id]
-  (-> b64-id .getBytes b64/decode Bytes.))
+  (-> b64-id (.replaceAll "-" "+") (.replaceAll "_" "/" ) .getBytes b64/decode Bytes.))
 
 (defn- parse-int
   "Safely coerces a string into an integer. If the conversion is impossible,
