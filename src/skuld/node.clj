@@ -327,6 +327,7 @@
           ; Done
           {}
           (do
+            (trace-log node "claim: asking" peer "for a claim")
             (let [[response] (net/sync-req! (:net node) [peer] {}
                                             (assoc msg :type :claim-local))]
               (if (:task response)
