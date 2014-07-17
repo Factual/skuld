@@ -17,6 +17,8 @@
 (in-ns 'skuld.aae)
 (clojure.core/declare sync-from!)
 (clojure.core/declare sync-to!)
+(in-ns 'skuld.scanner)
+(clojure.core/declare scan!)
 (in-ns 'skuld.vnode)
 
 (declare wipe!)
@@ -386,6 +388,7 @@
                                                ; We voted for someone else in the
                                                ; meantime
                                                state)))]
+                          (skuld.scanner/scan! (:queue vnode) vnode)
                           (info (net-id vnode) (:partition vnode)
                                 "election successful: cohort now" epoch new-cohort))))))))))))))
 
