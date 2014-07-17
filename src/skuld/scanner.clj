@@ -11,11 +11,10 @@
 (defn scan!
   "Scans over all tasks in a vnode."
   [queue vnode]
-  (let [leader? (vnode/leader? vnode)]
+  (if (vnode/leader? vnode)
     (doseq [task (vnode/tasks vnode)]
       ; Ensure the task is in the queue if this vnode is a leader.
-      (when leader?
-        (queue/update! queue task)))))
+      (queue/update! queue task))))
 
 (defn service
   "Starts a new scanning service. Takes an atom wrapping a map of partitions to
