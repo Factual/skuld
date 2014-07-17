@@ -14,7 +14,7 @@
                     DataInputStream
                     InputStreamReader
                     PushbackReader)
-           (java.net InetSocketAddress)
+           (java.net InetSocketAddress ConnectException)
            (java.nio.charset Charset)
            (java.util List)
            (java.util.concurrent TimeUnit
@@ -182,7 +182,12 @@
           (try
             (handle-response! requests id message)
             (catch Throwable t
-              (warn t "node handler caught"))))))))
+              (warn t "node handler caught")))))
+      (exceptionCaught [^ChannelHandlerContext ctx ^Throwable cause]
+        (let [peer (.. ctx channel (attr peer-attr) get)]
+          (condp instance? cause
+            ConnectException (warnf "client handle caught exception with {}: {}" peer (.getMessage cause))
+                             (warn cause "client handle caught exception with" peer)))))))
 
 (defn client
   [node]
@@ -235,15 +240,15 @@
 
   (let [^Bootstrap bootstrap (:bootstrap @(:client node))]
     (locking bootstrap
-      (let [ch (.. bootstrap
+      (let [cf (.. bootstrap
                    (remoteAddress ^String (:host peer) (int (:port peer)))
-                   (connect)
-                   (sync)
-                   (channel))]
+                   (connect))
+            ch (.channel cf)]
         ; Store the peer ID in the channel's attributes for later.
         (.. ch
             (attr peer-attr)
             (set (string-id peer)))
+        (.sync cf)
         ch))))
 
 (defn ^Channel conn

@@ -27,6 +27,19 @@
 (clojure.core/declare shutdown!)
 (in-ns 'skuld.node)
 
+;; Logging
+(defn trace-log-prefix
+  "Prefix for trace log messages"
+  [node]
+  (format "%s:%d:" (:host node) (:port node)))
+
+(defmacro trace-log
+  "Log a message with context"
+  [node & args]
+  `(let [node-prefix# (trace-log-prefix ~node)]
+     (info node-prefix# ~@args)))
+
+;;
 
 (defn vnodes
   "Returns a map of partitions to vnodes for a node."
@@ -136,6 +149,7 @@
         part (partition-name node (:id task))]
     (if-let [vnode (vnode node part)]
       (do (vnode/merge-task! vnode task)
+          (trace-log node "enqueue-local: enqueued id" (:id task) "on vnode" (vnode/full-id vnode) "for task:" task)
           {:task-id (:id task)})
       {:error (str "I don't have partition" part "for task" (:id task))})))
 
@@ -150,7 +164,7 @@
                                  {:type :get-task-local
                                   :id   id})
         acks (remove :error responses)
-        _ (info (:port node) "get-task: " responses)
+        _ (trace-log node "get-task:" responses)
         task (->> responses (map :task) (reduce task/merge))]
     (if (<= r (count acks))
       {:n    (count acks)
@@ -194,13 +208,14 @@
 (defn count-tasks-local
   "Estimates the total number of tasks on the local node."
   [node msg]
-  {:partitions
-   (reduce (fn [counts [k vnode]]
-             (if (vnode/active? vnode)
-               (assoc counts k (vnode/count-tasks vnode))
-               counts))
-           {}
-           (vnodes node))})
+  (let [partition-counts (reduce (fn [counts [k vnode]]
+                                   (if (vnode/active? vnode)
+                                     (assoc counts k (vnode/count-tasks vnode))
+                                     counts))
+                                 {}
+                                 (vnodes node))]
+    (trace-log node "count-tasks-local:" partition-counts)
+    {:partitions partition-counts}))
 
 (defn cover
   "Returns a map of nodes to lists of partitions on that node, such that each
@@ -280,6 +295,7 @@
   [node msg]
   ; Find the next task
   (let [task (when-let [id (:id (queue/poll! (:queue node)))]
+               (trace-log node "claim-local: claiming id from queue:" id)
                ; Find vnode for this task
                (let [vnode (vnode node (partition-name node id))]
                  (if (or (not vnode) (not (vnode/leader? vnode)))
@@ -287,9 +303,11 @@
 
                    ; Claim task from vnode
                    (try
-                     (vnode/claim! vnode id (or (:dt msg) 10000))
+                     (let [ta (vnode/claim! vnode id (or (:dt msg) 10000))]
+                       (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
+                       ta)
                      (catch Throwable t
-                       (warn t "caught while claiming" id "from vnode")
+                       (warn t (trace-log-prefix node) "caught while claiming" id "from vnode" (vnode/full-id vnode))
                        :retry)))))]
 
     (if (not= :retry task)
@@ -309,6 +327,7 @@
           ; Done
           {}
           (do
+            (trace-log node "claim: asking" peer "for a claim")
             (let [[response] (net/sync-req! (:net node) [peer] {}
                                             (assoc msg :type :claim-local))]
               (if (:task response)
@@ -430,7 +449,7 @@
     (:offline :peer [part m c]
               (try
                 (locking vnodes
-                  (info (:port net) part "coming online")
+                  (trace-log net part "coming online")
                   (if-let [existing (get @vnodes part)]
                     (vnode/revive! existing)
                     (swap! vnodes assoc part
@@ -445,21 +464,21 @@
     (:offline :DROPPED [part m c]
               (try
                 (locking vnodes
-                  (info (:port net) part "dropped")
+                  (trace-log net part "dropped")
                   (when-let [vnode (get @vnodes part)]
                     (vnode/shutdown! vnode)
                     (swap! vnodes dissoc part)))
                 (catch Throwable t
-                  (fatal t (:port net) "dropping" part))))
+                  (fatal t (trace-log-prefix net) "dropping" part))))
 
     (:peer :offline [part m c]
            (try
              (locking vnodes
-               (info (:port net) part "going offline")
+               (trace-log net part "going offline")
                (when-let [v (get @vnodes part)]
                  (vnode/zombie! v)))
              (catch Throwable t
-               (fatal t (:port net) "taking" part "offline"))))))
+               (fatal t (trace-log-prefix net) "taking" part "offline"))))))
 
 (defn start-local-vnodes!
   "Spins up a local zombie vnode for any local data."
@@ -474,7 +493,7 @@
                                               :host (:host node)
                                               :port (:port node)
                                               :ext "level"}))
-                    (info (:port node) "spooling up zombie vnode" part)
+                    (trace-log node "spooling up zombie vnode" part)
                     (let [v (new-vnode node part)]
                       (vnode/zombie! v)
                       (swap! vnodes assoc part v))))))
@@ -546,7 +565,7 @@
   "Blocks until all partitions are known to exist on a peer, then returns node."
   [node]
   (while (empty? (all-partitions node))
-    (info (:port node) "waiting-for-partition-list")
+    (trace-log node "waiting-for-partition-list")
     (Thread/sleep 10))
 
   (while (->> node

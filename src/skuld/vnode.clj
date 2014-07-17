@@ -27,7 +27,7 @@
   :partition
   :state"
   [opts]
-  (info "starting vnode" (net/id (:net opts)) (:partition opts))
+  (info (format "%s/%s:" (net/string-id (net/id (:net opts))) (:partition opts)) "starting vnode")
   {:partition (:partition opts)
    :net       (:net opts)
    :router    (:router opts)
@@ -118,6 +118,19 @@
   "How long do we have to wait before initiating an election, in ms?"
   10000)
 
+;; Logging
+
+(defn full-id
+  "Full ID for vnode"
+  [vnode]
+  (format "%s/%s" (net/string-id (net-id vnode)) (:partition vnode)))
+
+(defmacro trace-log
+  "Log a message with context"
+  [vnode & args]
+  `(let [vnode-id# (format "%s:" (full-id ~vnode))]
+     (info vnode-id# ~@args)))
+
 (defn suppress-election!
   [vnode msg]
   (when (= (:epoch msg) (epoch vnode))
@@ -143,8 +156,7 @@
                                  (dissoc state :updated)))))]
         (when (:updated state)
           (suppress-election! vnode msg)
-          (info (net-id vnode) (:partition vnode)
-                "assuming epoch" leader-epoch)
+          (trace-log vnode "assuming epoch" leader-epoch)
           state)))))
 
 (defn request-vote!
@@ -160,7 +172,7 @@
   "Forces a leader to step down."
   [vnode]
   (locking vnode
-    (info (net-id vnode) (:partition vnode) "demoted")
+    (trace-log vnode "demoted")
     (swap! (:state vnode) (fn [state]
                            (if (= :leader (:type state))
                              (assoc state :type :follower)
@@ -171,14 +183,14 @@
   its data to a leader."
   [vnode]
   (locking vnode
-    (info (net-id vnode) (:partition vnode) "now zombie")
+    (trace-log vnode "now zombie")
     (swap! (:state vnode) assoc :type :zombie)))
 
 (defn revive!
   "Converts dead or zombie vnodes into followers."
   [vnode]
   (locking vnode
-    (info (net-id vnode) (:partition vnode) "revived!")
+    (trace-log vnode "revived!")
     (swap! (:state vnode) (fn [state]
                             (if (#{:zombie :dead} (:type state))
                               (assoc state :type :follower)
@@ -280,14 +292,14 @@
   we inform all zombies which are not a part of our new cohort that it is safe
   to drop their claim set."
   [vnode]
-  (info (net-id vnode) (:partition vnode) "initiating election")
+  (trace-log vnode "initiating election")
   (locking vnode
     (when (active? vnode)
-      (info (net-id vnode) "node is active")
+      (trace-log vnode "this node is active")
 
       (when (< (+ @(:last-leader-msg-time vnode) election-timeout)
                (flake/linear-time))
-        (info (net-id vnode) "leader is outdated")
+        (trace-log vnode "current leader is outdated")
 
         ; First, compute the set of peers that will comprise the next epoch.
         (let [self       (net-id vnode)
@@ -308,7 +320,7 @@
           (if (<= epoch (:epoch old))
             ; We're outdated; fast-forward to the new epoch.
             (do
-              (info (net-id vnode) "Outdated epoch relative to ZK; aborting election")
+              (trace-log vnode "Outdated epoch relative to ZK; aborting election")
               (swap! (:state vnode) (fn [state]
                                       (if (<= (:epoch state) (:epoch old))
                                         (merge state {:epoch (:epoch old)
@@ -322,7 +334,7 @@
                   responses   (atom (list))
                   accepted?   (promise)
                   peers       (disj (set/union new-cohort old-cohort) self)]
-              (info (net-id vnode) :old old-cohort :new new-cohort)
+              (trace-log vnode "Issuing requests for election" :old old-cohort :new new-cohort)
               (doseq [node peers]
                 (net/req! (:net vnode) (list node) {:r 1}
                           {:type :request-vote
@@ -336,33 +348,32 @@
                               ; Cancel request; we saw a newer epoch from a peer.
                               (do
                                 (deliver accepted? false)
-                                (info (net-id vnode) (:partition vnode)
+                                (trace-log vnode
                                       "aborting candidacy due to newer epoch"))
                               ; Have we enough votes?
                               (if (sufficient-votes? vnode old-cohort new-cohort rs)
                                 (do
                                   (deliver accepted? true)
-                                  (info (net-id vnode) "Received enough votes:" rs))
+                                  (trace-log vnode "Received enough votes:" rs))
                                 (when (<= (count peers) (count rs))
                                   (deliver accepted? false)
-                                  (info (net-id vnode) "All votes in; giving up.")))))))
+                                  (trace-log vnode "All votes in; giving up.")))))))
 
               ; Await responses
               (if-not (deref accepted? 5000 false)
-                (info (net-id vnode) (:partition vnode)
-                      "election failed; not enough votes")
+                (trace-log vnode "election failed; not enough votes")
 
                 ; Sync from old cohort.
                 (if-not (sync-with-majority! vnode
                                              old-cohort
                                              skuld.aae/sync-from!)
-                  (info (net-id vnode) "Wasn't able to replicate from enough of old cohort; cannot become leader.")
+                  (trace-log vnode "Wasn't able to replicate from enough of old cohort; cannot become leader.")
 
                   ; Sync to new cohort.
                   (if-not (sync-with-majority! vnode
                                                new-cohort
                                                skuld.aae/sync-to!)
-                    (error (net-id vnode) "Wasn't able to replicate to enough of new cohort; cannot become leader.")
+                    (errorf "%s: Wasn't able to replicate to enough of new cohort; cannot become leader." (full-id vnode))
 
                     ; Update ZK with new cohort and epoch--but only if nobody else
                     ; got there first.
@@ -374,8 +385,7 @@
                                                          new-leader
                                                          current)))]
                       (if (not= new-leader set-leader)
-                        (info (net-id vnode) (:partition vnode)
-                              "election failed: another leader updated zk")
+                        (trace-log vnode "election failed: another leader updated zk")
 
                         ; Success!
                         (let [state (swap! (:state vnode)
@@ -386,8 +396,7 @@
                                                ; We voted for someone else in the
                                                ; meantime
                                                state)))]
-                          (info (net-id vnode) (:partition vnode)
-                                "election successful: cohort now" epoch new-cohort))))))))))))))
+                          (trace-log vnode "election successful: cohort now" epoch new-cohort))))))))))))))
 
 ;; Tasks
 
@@ -503,11 +512,11 @@
                                          (epoch vnode)
                                          ", claim coordinator aborting"))))
     
-    (if (<= maj successes)
-      task
-      (throw (RuntimeException. (str "needed " maj
-                                     " acks from followers, only received "
-                                     successes))))))))
+        (if (<= maj successes)
+          task
+          (throw (RuntimeException. (str "needed " maj
+                                         " acks from followers, only received "
+                                         successes))))))))
 
 (defn complete!
   "Completes the given task in the specified claim. Msg should contain:
@@ -524,5 +533,6 @@
 (defn wipe!
   "Wipe a vnode's data clean."
   [vnode]
+  (trace-log vnode "wiping vnode")
   (db/wipe! (:db vnode))
   vnode)
