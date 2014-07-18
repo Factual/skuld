@@ -396,6 +396,7 @@
                                                ; We voted for someone else in the
                                                ; meantime
                                                state)))]
+                          (swap! (:last-leader-msg-time vnode) max (flake/linear-time))
                           (trace-log vnode "election successful: cohort now" epoch new-cohort))))))))))))))
 
 ;; Tasks
