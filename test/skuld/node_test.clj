@@ -59,8 +59,8 @@
          dorun)
     nodes))
 
-(defn shutdown-nodes!
-  "Shutdown a seq of nodes."
+(defn wipe-and-shutdown-nodes!
+  "Wipe and shutdown a seq of nodes."
   [nodes]
   (doall
     (pmap (fn wipe-and-shutdown [node]
@@ -119,7 +119,7 @@
                    (finally
                      (client/shutdown! *client*))))
                (finally
-                 (shutdown-nodes! *nodes*))))))
+                 (wipe-and-shutdown-nodes! *nodes*))))))
 
 (defn each
   [f]
@@ -131,13 +131,13 @@
       (f))
     (do
       (info :repairing-cluster)
-      (shutdown-nodes! *nodes*)
+      (wipe-and-shutdown-nodes! *nodes*)
       (binding [*nodes* (start-nodes! *zk*)]
         (try
           (client/wipe! *client*)
           (f)
           (finally
-            (shutdown-nodes! *nodes*)))))))
+            (wipe-and-shutdown-nodes! *nodes*)))))))
 
 (use-fixtures :once once)
 (use-fixtures :each each)
