@@ -86,7 +86,17 @@
   "Returns a copy of the task, but completed. Takes a claim index, and a time
   to mark the task as completed at."
   [task claim-idx t]
-  (assoc-in task [:claims claim-idx :completed] t))
+  (when-not task
+    (throw (IllegalStateException. "task is nil")))
+
+  (when (completed? task)
+    (throw (IllegalStateException. "task is already completed")))
+
+  (if-let [claim (nth (:claims task) claim-idx nil)]
+    (if (valid-claim? claim)
+      (assoc-in task [:claims claim-idx :completed] t)
+      (throw (IllegalStateException. "claim is not valid")))
+    (throw (IllegalStateException. "claim does not exist"))))
 
 (defn mergev
   "Merges several vectors together, taking the first non-nil value for each

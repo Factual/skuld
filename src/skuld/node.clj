@@ -352,8 +352,11 @@
   [node msg]
   (let [part (->> msg :task-id (partition-name node))]
     (if-let [vnode (vnode node part)] 
-      (do (vnode/complete! vnode msg)
-          {:w 1})
+      (try
+        (vnode/complete! vnode msg)
+        {:w 1}
+        (catch IllegalStateException ex
+          {:error (format "Could not complete claim for {}: {}" (:task-id msg) (.getMessage ex))}))
       {:error (str "I don't have partition" part "for task" (:task-id msg))})))
 
 (defn complete!

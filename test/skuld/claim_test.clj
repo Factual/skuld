@@ -58,7 +58,7 @@
   (elect! *nodes*)
   (with-redefs [task/clock-skew-buffer 0]
     (let [id (client/enqueue! *client* {:data "sup"})]
-      (is (client/claim! *client* 1))
+      (is (client/claim! *client* 1000))
 
       ; Isn't completed
       (is (not (task/completed? (client/get-task *client* id))))
