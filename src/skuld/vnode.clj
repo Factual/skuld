@@ -131,10 +131,15 @@
   `(let [vnode-id# (format "%s:" (full-id ~vnode))]
      (info vnode-id# ~@args)))
 
+(defn update-last-leader-msg-time!
+  "Update the last leader message time"
+  [vnode]
+  (swap! (:last-leader-msg-time vnode) max (flake/linear-time)))
+
 (defn suppress-election!
   [vnode msg]
   (when (= (:epoch msg) (epoch vnode))
-    (swap! (:last-leader-msg-time vnode) max (flake/linear-time))))
+    (update-last-leader-msg-time! vnode)))
 
 (defn accept-newer-epoch!
   "Any node with newer epoch information than us can update us to that epoch
@@ -396,7 +401,7 @@
                                                ; We voted for someone else in the
                                                ; meantime
                                                state)))]
-                          (swap! (:last-leader-msg-time vnode) max (flake/linear-time))
+                          (update-last-leader-msg-time! vnode)
                           (trace-log vnode "election successful: cohort now" epoch new-cohort))))))))))))))
 
 ;; Tasks
@@ -514,7 +519,10 @@
                                          ", claim coordinator aborting"))))
     
         (if (<= maj successes)
-          task
+          (do
+            ; We succeeded at this claim, so our cohort has updated their last-leader-msg-time
+            (update-last-leader-msg-time! vnode)
+            task)
           (throw (IllegalStateException. (str "needed " maj
                                          " acks from followers, only received "
                                          successes))))))))
