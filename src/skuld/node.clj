@@ -401,6 +401,15 @@
       {:error (str (net/id (:net node))
                            " has no vnode for " (:partition msg))})))
 
+(defn heartbeat!
+  "Handles a request for a heartbeat from a leader."
+  [node msg]
+  (if-let [vnode (vnode node (:partition msg))]
+    (vnode/heartbeat! vnode msg)
+    (do
+      {:error (str (net/id (:net node))
+                   " has no vnode for " (:partition msg))})))
+
 (defn handler
   "Returns a fn which handles messages for a node."
   [node]
@@ -424,6 +433,7 @@
        :wipe               wipe!
        :wipe-local         wipe-local!
        :request-vote       request-vote!
+       :heartbeat          heartbeat!
        (constantly {:error (str "unknown message type" (:type msg))}))
      node msg)))
 

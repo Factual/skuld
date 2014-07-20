@@ -89,7 +89,7 @@
                         (remove partition-available?))]
       (when-not (empty? unelected)
         (locking *out*
-          (debug (count unelected) "unelected partitions"))
+          (info (count unelected) "unelected partitions"))
 ;          (debug (map (partial map (juxt (comp :port vnode/net-id)
 ;                                       :partition
 ;                                       vnode/state))
