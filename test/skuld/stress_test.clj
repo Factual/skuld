@@ -59,8 +59,13 @@
   (elect! *nodes*)
   
   ; Enqueue something and claim it.
-  (let [id (client/enqueue! *client* {:w 3} {:data "meow"})
-        claim (client/claim! *client* 100000)]
+  (let [id       (client/enqueue! *client* {:w 3} {:data "meow"})
+        deadline (+ (flake/linear-time) 10000)
+        claim    (loop []
+                   (if-let [claim (client/claim! *client* 100000)]
+                     claim
+                     (if (< (flake/linear-time) deadline)
+                       (recur))))]
     (is (= id (:id claim)))
 
     ; Now kill 2 of the nodes which own that id, leaving one copy
