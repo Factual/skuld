@@ -10,6 +10,7 @@
             [skuld.curator   :as curator]
             [skuld.net       :as net]
             [skuld.task      :as task]
+            [skuld.flake     :as flake]
             [skuld.aae       :as aae]
             [skuld.politics  :as politics]
             [skuld.logging   :as logging]
@@ -310,23 +311,28 @@
     (is (= claims []))
 
     ;; Now let's claim a task, i.e. the task we just enqueued
-    (let [resp (http/post "http://127.0.0.1:13100/tasks/claim"
-                          {:form-params {:dt 300000}
-                           :content-type :json
-                           :as :json})
-          content-type (get-in resp [:headers "content-type"])
-          id* (-> resp :body :task :id)
-          resp* (http/get (str "http://127.0.0.1:13100/tasks/" id "?r=3")
-                          {:as :json})
-          claims (-> resp* :body :task :claims)
-          cid 0]
-      (is (= 200 (:status resp)))
-      (is (= "application/json;charset=utf-8" content-type))
-      (is (= id id*))
-      (is (not= claims []))
+    (let [deadline (+ (flake/linear-time) 10000)]
+      (loop []
+        (let [resp (http/post "http://127.0.0.1:13100/tasks/claim"
+                              {:form-params {:dt 300000}
+                               :content-type :json
+                               :as :json})
+              content-type (get-in resp [:headers "content-type"])
+              id* (-> resp :body :task :id)]
+          (if (and (not id*) (< (flake/linear-time) deadline))
+            (recur)
+            (let [resp* (http/get (str "http://127.0.0.1:13100/tasks/" id "?r=3")
+                                  {:as :json})
+                  claims (-> resp* :body :task :claims)]
+              (is (= 200 (:status resp)))
+              (is (= "application/json;charset=utf-8" content-type))
+              (is (= id id*))
+              (is (not= claims []))))))
+
 
       ;; Finally let's complete it
       (let [uri (str "http://127.0.0.1:13100/tasks/complete/" id)
+            cid 0
             resp (http/post uri {:form-params {:cid cid}
                                  :content-type :json
                                  :as :json})
