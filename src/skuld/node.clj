@@ -356,7 +356,7 @@
         (vnode/complete! vnode msg)
         {:w 1}
         (catch IllegalStateException ex
-          {:error (format "Could not complete claim for {}: {}" (:task-id msg) (.getMessage ex))}))
+          {:error (format "Could not complete claim for %s: %s" (:task-id msg) (.getMessage ex))}))
       {:error (str "I don't have partition" part "for task" (:task-id msg))})))
 
 (defn complete!
