@@ -292,14 +292,14 @@
   we inform all zombies which are not a part of our new cohort that it is safe
   to drop their claim set."
   [vnode]
-  (trace-log vnode "initiating election")
+  (trace-log vnode "elect: initiating election")
   (locking vnode
     (when (active? vnode)
-      (trace-log vnode "this node is active")
+      (trace-log vnode "elect: this node is active")
 
       (when (< (+ @(:last-leader-msg-time vnode) election-timeout)
                (flake/linear-time))
-        (trace-log vnode "current leader is outdated")
+        (trace-log vnode "elect: current leader is outdated")
 
         ; First, compute the set of peers that will comprise the next epoch.
         (let [self       (net-id vnode)
@@ -320,7 +320,7 @@
           (if (<= epoch (:epoch old))
             ; We're outdated; fast-forward to the new epoch.
             (do
-              (trace-log vnode "Outdated epoch relative to ZK; aborting election")
+              (trace-log vnode "elect: Outdated epoch relative to ZK; aborting election")
               (swap! (:state vnode) (fn [state]
                                       (if (<= (:epoch state) (:epoch old))
                                         (merge state {:epoch (:epoch old)
@@ -334,7 +334,7 @@
                   responses   (atom (list))
                   accepted?   (promise)
                   peers       (disj (set/union new-cohort old-cohort) self)]
-              (trace-log vnode "Issuing requests for election" :old old-cohort :new new-cohort)
+              (trace-log vnode "elect: Issuing requests for election" :old old-cohort :new new-cohort)
               (doseq [node peers]
                 (net/req! (:net vnode) (list node) {:r 1}
                           {:type :request-vote
@@ -349,31 +349,31 @@
                               (do
                                 (deliver accepted? false)
                                 (trace-log vnode
-                                      "aborting candidacy due to newer epoch"))
+                                      "elect: aborting candidacy due to newer epoch"))
                               ; Have we enough votes?
                               (if (sufficient-votes? vnode old-cohort new-cohort rs)
                                 (do
                                   (deliver accepted? true)
-                                  (trace-log vnode "Received enough votes:" rs))
+                                  (trace-log vnode "elect: Received enough votes:" rs))
                                 (when (<= (count peers) (count rs))
                                   (deliver accepted? false)
-                                  (trace-log vnode "All votes in; giving up.")))))))
+                                  (trace-log vnode "elect: All votes in; giving up.")))))))
 
               ; Await responses
               (if-not (deref accepted? 5000 false)
-                (trace-log vnode "election failed; not enough votes")
+                (trace-log vnode "elect: election failed; not enough votes")
 
                 ; Sync from old cohort.
                 (if-not (sync-with-majority! vnode
                                              old-cohort
                                              skuld.aae/sync-from!)
-                  (trace-log vnode "Wasn't able to replicate from enough of old cohort; cannot become leader.")
+                  (trace-log vnode "elect: Wasn't able to replicate from enough of old cohort; cannot become leader.")
 
                   ; Sync to new cohort.
                   (if-not (sync-with-majority! vnode
                                                new-cohort
                                                skuld.aae/sync-to!)
-                    (errorf "%s: Wasn't able to replicate to enough of new cohort; cannot become leader." (full-id vnode))
+                    (errorf "%s: elect: Wasn't able to replicate to enough of new cohort; cannot become leader." (full-id vnode))
 
                     ; Update ZK with new cohort and epoch--but only if nobody else
                     ; got there first.
@@ -385,7 +385,7 @@
                                                          new-leader
                                                          current)))]
                       (if (not= new-leader set-leader)
-                        (trace-log vnode "election failed: another leader updated zk")
+                        (trace-log vnode "elect: election failed: another leader updated zk")
 
                         ; Success!
                         (let [state (swap! (:state vnode)
@@ -397,7 +397,7 @@
                                                ; meantime
                                                state)))]
                           (swap! (:last-leader-msg-time vnode) max (flake/linear-time))
-                          (trace-log vnode "election successful: cohort now" epoch new-cohort))))))))))))))
+                          (trace-log vnode "elect: election successful: cohort now" epoch new-cohort))))))))))))))
 
 ;; Tasks
 
