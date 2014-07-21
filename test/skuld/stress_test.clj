@@ -42,11 +42,16 @@
                         (let [claims (assoc claims (:id t) t)]
                           (if (= (count ids) (count claims))
                             claims
-                            (recur claims))))
+                            (do
+                              (Thread/sleep 100)
+                              (recur claims)))))
+
                       ; Out of claims?
                       (if (> (flake/linear-time) deadline)
                         claims
-                        (recur claims))))]
+                        (do
+                          (Thread/sleep 100)
+                          (recur claims)))))]
     (is (= (count ids) (count claims)))
     (is (= (set (keys claims)) (set ids))))))
 
@@ -64,7 +69,8 @@
         claim    (loop []
                    (if-let [claim (client/claim! *client* 100000)]
                      claim
-                     (if (< (flake/linear-time) deadline)
+                     (when (< (flake/linear-time) deadline)
+                       (Thread/sleep 100)
                        (recur))))]
     (is (= id (:id claim)))
 
