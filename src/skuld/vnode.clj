@@ -163,7 +163,7 @@
                                  (dissoc state :updated)))))]
         (when (:updated state)
           (suppress-election! vnode msg)
-          (trace-log vnode "assuming epoch" leader-epoch)
+          (trace-log vnode "accepted newer epoch of" leader-epoch)
           state)))))
 
 (defn request-vote!
@@ -255,14 +255,16 @@
 (defn broadcast-heartbeat!
   "Send a heartbeat to all followers to retain leadership."
   [vnode]
-  (if (leader? vnode)
-    (let [epoch (epoch vnode)
-          peers (peers vnode)]
+  (let [state (state vnode)
+        peers (peers vnode)
+        epoch (:epoch state)]
+    (if (= :leader (:type state))
       (net/sync-req! (:net vnode) peers {:r (count peers)}
                      {:type      :heartbeat
                       :partition (:partition vnode)
                       :leader    (net-id vnode)
                       :epoch     epoch}))))
+
 
 (defn elect!
   "Attempt to become a primary. We need to ensure that:
@@ -376,7 +378,7 @@
                               (trace-log vnode "elect: Received enough votes:" rs))
                             (when (<= (count peers) (count rs))
                               (deliver accepted? false)
-                              (trace-log vnode "elect: all votes in; election was lost")))))))
+                              (trace-log vnode "elect: all votes in; election was lost:" rs)))))))
 
           ; Await responses
           (if-not (deref accepted? 5000 false)
