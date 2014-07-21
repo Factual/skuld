@@ -106,14 +106,14 @@
       ;     clojure.pprint/pprint)
 
       ; Wait for the preflist to converge on the replacement cohort
-      (let [deadline (+ (flake/linear-time) 10000)]
+      (let [deadline (+ (flake/linear-time) 20000)]
         (while (not (and (= 3 (count (preflist (first alive) id)))
                          (set/subset?
                            (set (preflist (first alive) id))
                            (set (map (comp net/id :net) replacements)))))
           (if (> (flake/linear-time) deadline)
             (throw (RuntimeException. "Could not converge before deadline"))
-            (Thread/sleep 1000))))
+            (Thread/sleep 500))))
 
 
       ; Elect a new cohort
