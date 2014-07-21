@@ -33,7 +33,7 @@
     (is (not-any? nil? ids))
     (is (= n (client/count-tasks *client*)))
     ; Claim all extant IDs
-    (let [deadline (+ (flake/linear-time) 10000)
+    (let [deadline (+ (flake/linear-time) 20000)
            claims  (loop [claims {}]
                     (if-let [t (client/claim! *client* 100000)]
                       (do
@@ -43,7 +43,7 @@
                           (if (= (count ids) (count claims))
                             claims
                             (do
-                              (Thread/sleep 100)
+                              (Thread/sleep 500)
                               (recur claims)))))
 
                       ; Out of claims?
@@ -65,12 +65,12 @@
   
   ; Enqueue something and claim it.
   (let [id       (client/enqueue! *client* {:w 3} {:data "meow"})
-        deadline (+ (flake/linear-time) 10000)
+        deadline (+ (flake/linear-time) 20000)
         claim    (loop []
                    (if-let [claim (client/claim! *client* 100000)]
                      claim
                      (when (< (flake/linear-time) deadline)
-                       (Thread/sleep 100)
+                       (Thread/sleep 500)
                        (recur))))]
     (is (= id (:id claim)))
 

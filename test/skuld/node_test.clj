@@ -311,7 +311,7 @@
     (is (= claims []))
 
     ;; Now let's claim a task, i.e. the task we just enqueued
-    (let [deadline (+ (flake/linear-time) 10000)]
+    (let [deadline (+ (flake/linear-time) 20000)]
       (loop []
         (let [resp (http/post "http://127.0.0.1:13100/tasks/claim"
                               {:form-params {:dt 300000}
@@ -320,7 +320,9 @@
               content-type (get-in resp [:headers "content-type"])
               id* (-> resp :body :task :id)]
           (if (and (not id*) (< (flake/linear-time) deadline))
-            (recur)
+            (do
+              (Thread/sleep 500)
+              (recur))
             (let [resp* (http/get (str "http://127.0.0.1:13100/tasks/" id "?r=3")
                                   {:as :json})
                   claims (-> resp* :body :task :claims)]
