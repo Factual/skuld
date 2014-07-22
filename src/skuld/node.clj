@@ -623,7 +623,6 @@
   (locking node
     (when-not (shutdown? node)
       (when-let [c (:clock-sync node)] (clock-sync/shutdown! c))
-      (when-let [s (:scanner node)]    (scanner/shutdown! s))
       (when-let [aae (:aae node)]      (aae/shutdown! aae))
       (when-let [p (:politics node)]   (politics/shutdown! p))
       (when-let [net (:net node)]      (net/shutdown! net))
