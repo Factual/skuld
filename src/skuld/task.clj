@@ -92,7 +92,10 @@
 (defn merge-by
   "Merges times by merge-fn"
   [merge-fn & times]
-  (merge-fn (filter (comp not nil?) times)))
+  (let [valid-times (filter (comp not nil?) times)]
+    (if (empty? valid-times)
+      nil
+      (apply merge-fn valid-times))))
 
 (defn merge-claims
   "Merges a collection of vectors of claims together."
