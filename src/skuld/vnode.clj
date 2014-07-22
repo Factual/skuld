@@ -29,10 +29,11 @@
   :state"
   [opts]
   (info (format "%s/%s:" (net/string-id (net/id (:net opts))) (:partition opts)) "starting vnode")
-  (let [vnode   {:partition (:partition opts)
+  (let [queue    (queue/queue)
+         vnode   {:partition (:partition opts)
                  :net       (:net opts)
                  :router    (:router opts)
-                 :queue     (queue/queue)
+                 :queue     queue
                  :db        (level/open {:partition (:partition opts)
                                          :host      (:host (:net opts))
                                          :port      (:port (:net opts))})
