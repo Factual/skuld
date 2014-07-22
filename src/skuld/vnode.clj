@@ -250,7 +250,8 @@
 (defn heartbeat!
   "Handles a request for a heartbeat from a leader."
   [vnode msg]
-  (suppress-election! vnode msg))
+  (suppress-election! vnode msg)
+  (accept-newer-epoch! vnode msg))
 
 (defn broadcast-heartbeat!
   "Send a heartbeat to all followers to retain leadership."
@@ -475,8 +476,8 @@
   ... and applies the given claim to our copy of that task. Returns an empty
   map if the claim is successful, or {:error ...} if the claim failed."
   [vnode {:keys [id i claim] :as msg}]
-  (accept-newer-epoch! vnode msg)
   (suppress-election! vnode msg)
+  (accept-newer-epoch! vnode msg)
   (try
     (locking vnode
       (assert (not (zombie? vnode)))
