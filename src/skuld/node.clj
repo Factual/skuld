@@ -296,8 +296,10 @@
   "Tries to claim a task from a local vnode."
   [node msg]
   ; Find the next task
+  (let [res
   (loop [[vnode & vnodes] (->> node vnodes vals shuffle)]
-    (if vnode
+    (when vnode
+      (trace-log node "claim-local: trying to claim from" (vnode/full-id vnode))
       (let [task (try
                    (if-let [ta (vnode/claim! vnode (or (:dt msg) 10000))]
                      (do
@@ -310,9 +312,10 @@
                    (catch Throwable t
                       (warn t (trace-log-prefix node) "caught while claiming from vnode" (vnode/full-id vnode))
                       :retry))]
-        (if (= :retry task)
-          (recur vnodes)
-          {:task task})))))
+        (if (not= :retry task)
+          {:task task}
+          (recur vnodes)))))]
+    (trace-log node "claim-local: returning:" res)))
 
 
 (defn claim!
