@@ -13,7 +13,6 @@
             [skuld.flake :as flake]
             [skuld.net :as net]
             [skuld.politics :as politics]
-            [skuld.scanner :as scanner]
             [skuld.task :as task]
             [skuld.vnode :as vnode])
   (:import (java.util Arrays)
@@ -287,7 +286,9 @@
 (defn count-queue-local
   "Estimates the number of enqueued tasks on this node."
   [node msg]
-  {:count (->> (vnodes node)
+  {:count (->> node
+               vnodes
+               vals
                vnode/count-queue
                (reduce +))})
 
@@ -295,21 +296,23 @@
   "Tries to claim a task from a local vnode."
   [node msg]
   ; Find the next task
-  (loop [[vnode & vnodes] (shuffle (vnodes node))]
-    (if-not vnode
-      nil
-      (try
-        (if-let [ta (vnode/claim! vnode (or (:dt msg) 10000))]
-          (do
-            (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
-            {:task ta})
-          (recur vnodes))
-        (catch IllegalStateException ex
-               (trace-log node (format "claim-local: failed to claim from %s: %s" (vnode/full-id vnode) (.getMessage ex)))
-               (recur vnodes)
-        (catch Throwable t
-               (warn t (trace-log-prefix node) "caught while claiming" id "from vnode" (vnode/full-id vnode))
-               (recur vnodes)))))))
+  (loop [[vnode & vnodes] (->> node vnodes vals shuffle)]
+    (if vnode
+      (let [task (try
+                   (if-let [ta (vnode/claim! vnode (or (:dt msg) 10000))]
+                     (do
+                       (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
+                       ta)
+                     :retry)
+                   (catch IllegalStateException ex
+                      (trace-log node (format "claim-local: failed to claim from %s: %s" (vnode/full-id vnode) (.getMessage ex)))
+                      :retry)
+                   (catch Throwable t
+                      (warn t (trace-log-prefix node) "caught while claiming from vnode" (vnode/full-id vnode))
+                      :retry))]
+        (if (= :retry task)
+          (recur vnodes)
+          {:task task})))))
 
 
 (defn claim!
@@ -435,13 +438,12 @@
   (vnode/vnode {:partition part
                 :curator   (:curator node)
                 :router    (:router node)
-                :queue     (:queue node)
                 :net       (:net node)}))
 
 (defn fsm
   "Compiles a new FSM to manage a vnodes map. Takes an atom of partitions to
   vnodes, a net node, and a promise of a router."
-  [vnodes curator net routerp queue]
+  [vnodes curator net routerp]
   (clj-helix.fsm/fsm
     fsm-def
     (:offline :peer [part m c]
@@ -454,7 +456,6 @@
                            (vnode/vnode {:partition part
                                          :curator curator
                                          :router @routerp
-                                         :queue queue
                                          :net net}))))
                 (catch Throwable t
                   (fatal t (:port net) "bringing" part "online"))))
@@ -542,7 +543,6 @@
               :participant    participant
               :controller     controller
               :vnodes         vnodes
-              :scanner        scanner
               :running        (atom true)}
 
         ; Initialize HTTP service

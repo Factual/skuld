@@ -433,7 +433,7 @@
   "Estimates the number of enqueued tasks."
   [vnode]
   (if (leader? vnode)
-    (count (:queue node))
+    (count (:queue vnode))
     0))
 
 (defn count-tasks
@@ -503,7 +503,7 @@
                       dec)]
 
     (when-not (= :leader (:type state))
-      (throw (IllegalStateException. (format "can't initiate claim: not a leader. current vnode type: {}" (:type state)))))
+      (throw (IllegalStateException. (format "can't initiate claim: not a leader. current vnode type: %s" (:type state)))))
 
     ; Look for the next available task
     (when-let [task-id (:id (queue/poll! (:queue vnode)))]
