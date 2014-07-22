@@ -5,17 +5,6 @@
   (:require skuld.flake-test
             [skuld.flake :as flake]))
 
-(deftest mergev-test
-  (are [a b] (= (apply mergev a) b)
-       [] []
-       [[]] []
-       [[1 2 3]] [1 2 3]
-       [nil [1 2 3]] [1 2 3]
-       [[4 5 6] [1 2 nil]] [1 2 6]
-       [[1] [nil 2]] [1 2]
-       [[nil 2] [1 nil 3]] [1 2 3]
-       [[nil 1] [nil 2] [nil 3]] [nil 3]
-       ))
 
 (deftest merge-claim-test
   (testing "empty"
@@ -56,7 +45,15 @@
     (let [t (task {:data :hi})]
       (is (= (merge (assoc t :claims [{:start 0 :end 1 :completed 100}])
                     (assoc t :claims [{:start 2 :end 4 :completed 50}]))
+             (assoc t :claims [{:start 0 :end 4 :completed 50}])))))
+
+  (testing "completed without start"
+    (let [t (task {:data :hi})]
+      (is (= (merge (assoc t :claims [{:start 0 :end 1 :completed 100}])
+                    (assoc t :claims [{:start 2 :end 4}])
+                    (assoc t :claims [{:completed 50}]))
              (assoc t :claims [{:start 0 :end 4 :completed 50}]))))))
+
 
 (deftest claim-test
   (let [t (claim (task {:data :hi}) 10)]
