@@ -16,14 +16,16 @@
                  (pmap
                    (fn [vnode]
                      (try
-                       (Thread/sleep (rand-int 100))
-                       (vnode/elect! vnode)
+                       (Thread/sleep (rand-int 300))
+                       (if (vnode/leader? vnode)
+                         (vnode/broadcast-heartbeat! vnode)
+                         (vnode/elect! vnode))
                        (catch Throwable t
-                         (warn t "electing" (:partition vnode))))))
+                         (warn t "exception while electing" (:partition vnode))))))
                dorun))
           (catch Throwable t
-            (warn t "in election cycle")))
-        (when (deref running 10000 true)
+            (warn t "exception in election cycle")))
+        (when (deref running 1000 true)
           (recur))))
     running))
 

@@ -400,6 +400,15 @@
       {:error (str (net/id (:net node))
                            " has no vnode for " (:partition msg))})))
 
+(defn heartbeat!
+  "Handles a request for a heartbeat from a leader."
+  [node msg]
+  (if-let [vnode (vnode node (:partition msg))]
+    (vnode/heartbeat! vnode msg)
+    (do
+      {:error (str (net/id (:net node))
+                   " has no vnode for " (:partition msg))})))
+
 (defn handler
   "Returns a fn which handles messages for a node."
   [node]
@@ -423,6 +432,7 @@
        :wipe               wipe!
        :wipe-local         wipe-local!
        :request-vote       request-vote!
+       :heartbeat          heartbeat!
        (constantly {:error (str "unknown message type" (:type msg))}))
      node msg)))
 
@@ -613,9 +623,10 @@
   (locking node
     (when-not (shutdown? node)
       (when-let [c (:clock-sync node)] (clock-sync/shutdown! c))
+      (when-let [s (:scanner node)]    (scanner/shutdown! s))
       (when-let [aae (:aae node)]      (aae/shutdown! aae))
-      (when-let [net (:net node)]      (net/shutdown! net))
       (when-let [p (:politics node)]   (politics/shutdown! p))
+      (when-let [net (:net node)]      (net/shutdown! net))
       (when-let [c (:curator node)]    (curator/shutdown! c))
       (when-let [h (:http node)]       (skuld.http/shutdown! h))
 
