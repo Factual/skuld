@@ -8,6 +8,7 @@
             [skuld.net        :as net]
             [skuld.flake      :as flake]
             [skuld.curator    :as curator]
+            [skuld.scanner    :as scanner]
             [skuld.queue      :as queue]
             [clj-helix.route  :as route]
             [clojure.set      :as set])
@@ -28,23 +29,27 @@
   :state"
   [opts]
   (info (format "%s/%s:" (net/string-id (net/id (:net opts))) (:partition opts)) "starting vnode")
-  {:partition (:partition opts)
-   :net       (:net opts)
-   :router    (:router opts)
-   :queue     (:queue opts)
-   :db        (level/open {:partition (:partition opts)
-                           :host      (:host (:net opts))
-                           :port      (:port (:net opts))})
-   :last-leader-msg-time (atom Long/MIN_VALUE)
-   :zk-leader (delay
-                (curator/distributed-atom (:curator opts)
-                                          (str "/" (:partition opts)
-                                               "/leader")
-                                          {:epoch 0
-                                           :cohort #{}}))
-   :state     (atom {:type :follower
-                     :leader nil
-                     :epoch 0})})
+  (let [vnode   {:partition (:partition opts)
+                 :net       (:net opts)
+                 :router    (:router opts)
+                 :queue     (queue/queue)
+                 :db        (level/open {:partition (:partition opts)
+                                         :host      (:host (:net opts))
+                                         :port      (:port (:net opts))})
+                 :last-leader-msg-time (atom Long/MIN_VALUE)
+                 :zk-leader (delay
+                              (curator/distributed-atom (:curator opts)
+                                                        (str "/" (:partition opts)
+                                                             "/leader")
+                                                        {:epoch 0
+                                                         :cohort #{}}))
+                 :state     (atom {:type :follower
+                                   :leader nil
+                                   :epoch 0})}
+
+        scanner (scanner/service vnode queue)
+        vnode   (assoc vnode :scanner scanner)]
+    vnode))
 
 ;; Leaders
 
@@ -207,6 +212,7 @@
   (locking vnode
     (when-not (= :dead @(:state vnode))
       (reset! (:state vnode) :dead)
+      (scanner/shutdown! (:scanner vnode))
       (db/close! (:db vnode)))))
 
 (defn majority-excluding-self
@@ -410,8 +416,7 @@
   "Takes a task and merges it into this vnode."
   [vnode task]
   (db/merge-task! (:db vnode) task)
-  (when (leader? vnode)
-    (queue/update! (:queue vnode) task)))
+  (queue/update! (:queue vnode) task))
 
 (defn get-task
   "Returns a specific task by ID."
@@ -422,6 +427,13 @@
   "All task IDs in this vnode."
   [vnode]
   (db/ids (:db vnode)))
+
+(defn count-queue
+  "Estimates the number of enqueued tasks."
+  [vnode]
+  (if (leader? vnode)
+    (count (:queue node))
+    0))
 
 (defn count-tasks
   "How many tasks are in this vnode?"
@@ -477,7 +489,7 @@
 (defn claim!
   "Claims a particular task ID from this vnode, for dt milliseconds. Returns the
   claimed task."
-  [vnode task-id dt]
+  [vnode dt]
   (let [state     (state vnode)
         cur-epoch (:epoch state)
         cohort    (:cohort state)
@@ -492,40 +504,42 @@
     (when-not (= :leader (:type state))
       (throw (IllegalStateException. (format "can't initiate claim: not a leader. current vnode type: {}" (:type state)))))
 
-    ; Attempt to claim a task locally.
-    (when-let [task (db/claim-task! (:db vnode) task-id dt)]
-      (let [; Get claim details
-            i     (dec (count (:claims task)))
-            claim (nth (:claims task) i)
+    ; Look for the next available task
+    (when-let [task-id (:id (queue/poll! (:queue vnode)))]
+      ; Attempt to claim a task locally.
+      (when-let [task (db/claim-task! (:db vnode) task-id dt)]
+        (let [; Get claim details
+              i     (dec (count (:claims task)))
+              claim (nth (:claims task) i)
 
-            ; Try to replicate claim remotely
-            responses (net/sync-req! (:net vnode)
-                                     (disj cohort (net-id vnode))
-                                     {:r maj}
-                                     {:type   :request-claim
-                                      :epoch  cur-epoch
-                                      :id     (:id task)
-                                      :i      i
-                                      :claim  claim})
-            successes (count (remove :error responses))]
-      
-        ; Check that we're still in the same epoch; a leader could
-        ; have subsumed us.
-        (when (not= cur-epoch (epoch vnode))
-          (throw (IllegalStateException. (str "epoch changed from "
-                                         cur-epoch
-                                         " to "
-                                         (epoch vnode)
-                                         ", claim coordinator aborting"))))
-    
-        (if (<= maj successes)
-          (do
-            ; We succeeded at this claim, so our cohort has updated their last-leader-msg-time
-            (update-last-leader-msg-time! vnode)
-            task)
-          (throw (IllegalStateException. (str "needed " maj
-                                         " acks from followers, only received "
-                                         successes))))))))
+              ; Try to replicate claim remotely
+              responses (net/sync-req! (:net vnode)
+                                       (disj cohort (net-id vnode))
+                                       {:r maj}
+                                       {:type   :request-claim
+                                        :epoch  cur-epoch
+                                        :id     (:id task)
+                                        :i      i
+                                        :claim  claim})
+              successes (count (remove :error responses))]
+
+          ; Check that we're still in the same epoch; a leader could
+          ; have subsumed us.
+          (when (not= cur-epoch (epoch vnode))
+            (throw (IllegalStateException. (str "epoch changed from "
+                                           cur-epoch
+                                           " to "
+                                           (epoch vnode)
+                                           ", claim coordinator aborting"))))
+
+          (if (<= maj successes)
+            (do
+              ; We succeeded at this claim, so our cohort has updated their last-leader-msg-time
+              (update-last-leader-msg-time! vnode)
+              task)
+            (throw (IllegalStateException. (str "needed " maj
+                                           " acks from followers, only received "
+                                           successes)))))))))
 
 (defn complete!
   "Completes the given task in the specified claim. Msg should contain:

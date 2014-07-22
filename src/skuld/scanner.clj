@@ -1,8 +1,13 @@
 (ns skuld.scanner
   "Periodically scans over vnodes to rebuild internal data structures."
   (:use clojure.tools.logging)
-  (:require [skuld.vnode :as vnode]
-            [skuld.queue :as queue]))
+  (:require [skuld.queue :as queue]))
+
+; DEAL WITH IT
+(in-ns 'skuld.vnode)
+(clojure.core/declare tasks)
+(in-ns 'skuld.scanner)
+
 
 (def interval
   "How long to sleep between scanning runs, in ms"
@@ -11,26 +16,19 @@
 (defn scan!
   "Scans over all tasks in a vnode."
   [queue vnode]
-  (let [leader? (vnode/leader? vnode)]
-    (doseq [task (vnode/tasks vnode)]
-      ; Ensure the task is in the queue if this vnode is a leader.
-      (when leader?
-        (queue/update! queue task)))))
+  (doseq [task (skuld.vnode/tasks vnode)]
+    (queue/update! queue task)))
 
 (defn service
   "Starts a new scanning service. Takes an atom wrapping a map of partitions to
   vnodes, and a queue."
-  [vnodes queue]
+  [vnode queue]
   (let [running (promise)]
     (future
       (when (deref running interval true)
         (loop []
           (try
-            (->> vnodes
-                 deref
-                 vals
-                 (map (partial scan! queue))
-                 dorun)
+            (scan! queue vnode)
             (catch Throwable t
               (warn t "queue refiller caught")))
 
