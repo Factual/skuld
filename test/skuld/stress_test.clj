@@ -33,18 +33,25 @@
     (is (not-any? nil? ids))
     (is (= n (client/count-tasks *client*)))
     ; Claim all extant IDs
-    (let [claims (loop [claims {}]
-                   (if-let [t (client/claim! *client* 100000)]
-                     (do
-                       ; Make sure we never double-claim
-                       (assert (not (get claims (:id t))))
-                       (let [claims (assoc claims (:id t) t)]
-                         (if (= (count ids) (count claims))
-                           claims
-                           (recur claims))))
-                     ; Out of claims?
-                     (do
-                       claims)))]
+    (let [deadline (+ (flake/linear-time) 20000)
+           claims  (loop [claims {}]
+                    (if-let [t (client/claim! *client* 100000)]
+                      (do
+                        ; Make sure we never double-claim
+                        (assert (not (get claims (:id t))))
+                        (let [claims (assoc claims (:id t) t)]
+                          (if (= (count ids) (count claims))
+                            claims
+                            (do
+                              (Thread/sleep 500)
+                              (recur claims)))))
+
+                      ; Out of claims?
+                      (if (> (flake/linear-time) deadline)
+                        claims
+                        (do
+                          (Thread/sleep 100)
+                          (recur claims)))))]
     (is (= (count ids) (count claims)))
     (is (= (set (keys claims)) (set ids))))))
 
@@ -57,8 +64,14 @@
   (elect! *nodes*)
   
   ; Enqueue something and claim it.
-  (let [id (client/enqueue! *client* {:w 3} {:data "meow"})
-        claim (client/claim! *client* 100000)]
+  (let [id       (client/enqueue! *client* {:w 3} {:data "meow"})
+        deadline (+ (flake/linear-time) 20000)
+        claim    (loop []
+                   (if-let [claim (client/claim! *client* 100000)]
+                     claim
+                     (when (< (flake/linear-time) deadline)
+                       (Thread/sleep 500)
+                       (recur))))]
     (is (= id (:id claim)))
 
     ; Now kill 2 of the nodes which own that id, leaving one copy
@@ -93,11 +106,15 @@
       ;     clojure.pprint/pprint)
 
       ; Wait for the preflist to converge on the replacement cohort
-      (while (not (and (= 3 (count (preflist (first alive) id)))
-                       (set/subset?
-                         (set (preflist (first alive) id))
-                         (set (map (comp net/id :net) replacements)))))
-        (Thread/sleep 1000))
+      (let [deadline (+ (flake/linear-time) 20000)]
+        (while (not (and (= 3 (count (preflist (first alive) id)))
+                         (set/subset?
+                           (set (preflist (first alive) id))
+                           (set (map (comp net/id :net) replacements)))))
+          (if (> (flake/linear-time) deadline)
+            (throw (RuntimeException. "Could not converge before deadline"))
+            (Thread/sleep 500))))
+
 
       ; Elect a new cohort
       (elect! replacements)
