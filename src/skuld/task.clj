@@ -88,34 +88,11 @@
   [task claim-idx t]
   (assoc-in task [:claims claim-idx :completed] t))
 
-(defn mergev
-  "Merges several vectors together, taking the first non-nil value for each
-  index."
-  ([]
-   [])
-  ([v]
-   v)
-  ([v & vs]
-   (let [cnt (apply max (map count vs))
-         vs (reverse (cons v vs))]
-     (->> (range cnt)
-          (map (fn [idx]
-                 (some
-                   #(nth % idx nil)
-                   vs)))
-          (into [])))))
 
-(defn merge-completed
-  "Merges n completed times together."
-  [times]
-  (reduce (fn [completed t]
-            (cond
-              (nil? t)         completed
-              (nil? completed) t
-              (< completed t)  completed
-              :else            t))
-          nil
-          times))
+(defn merge-by
+  "Merges times by merge-fn"
+  [merge-fn & times]
+  (merge-fn (filter (comp not nil?) times)))
 
 (defn merge-claims
   "Merges a collection of vectors of claims together."
@@ -132,13 +109,15 @@
                  (reduce (fn combine [merged claims]
                            (if-let [claim (nth claims i nil)]
                              (if merged
-                               {:start (min (:start merged)
-                                            (:start claim))
-                                :end   (max (:end merged)
-                                            (:end claim))
-                                :completed (merge-completed
-                                             (list (:completed merged)
-                                                   (:completed claim)))}
+                               {:start     (merge-by min
+                                                     (:start merged)
+                                                     (:start claim))
+                                :end       (merge-by max
+                                                     (:end merged)
+                                                     (:end claim))
+                                :completed (merge-by min
+                                                     (:completed merged)
+                                                     (:completed claim))}
                                claim)
                              merged))
                          nil
