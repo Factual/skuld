@@ -120,16 +120,6 @@
   [vnode]
   (:leader (state vnode)))
 
-(def election-timeout
-  "How long do we have to wait before initiating an election, in ms?"
-  10000)
-
-(defn leader-alive?
-  "Is the current leader still alive?"
-  [vnode]
-  (> (+ @(:last-leader-msg-time vnode) election-timeout)
-     (flake/linear-time)))
-
 
 ;; Logging
 
@@ -143,6 +133,16 @@
   [vnode & args]
   `(let [vnode-id# (format "%s:" (full-id ~vnode))]
      (info vnode-id# ~@args)))
+
+(def election-timeout
+  "How long do we have to wait before initiating an election, in ms?"
+  10000)
+
+(defn leader-alive?
+  "Is the current leader still alive?"
+  [vnode]
+  (> (+ @(:last-leader-msg-time vnode) election-timeout)
+     (flake/linear-time)))
 
 (defn update-last-leader-msg-time!
   "Update the last leader message time"
@@ -269,7 +269,7 @@
   "Send a heartbeat to all followers to retain leadership."
   [vnode]
   (let [state (state vnode)
-        peers (peers vnode)
+        peers (disj (set (peers vnode)) (net-id vnode))
         epoch (:epoch state)]
     (if (= :leader (:type state))
       (net/sync-req! (:net vnode) peers {:r (count peers)}
@@ -333,105 +333,105 @@
     (when (and
             (active? vnode)
             (not (leader? vnode))
-            (not (leader-alive? vnode))))
-    (trace-log vnode "elect: initiating election. current leader is not alive")
+            (not (leader-alive? vnode)))
+      (trace-log vnode "elect: initiating election. current leader is not alive for epoch" (:epoch (state vnode)))
 
-    ; First, compute the set of peers that will comprise the next epoch.
-    (let [self       (net-id vnode)
-          new-cohort (set (peers vnode))
+      ; First, compute the set of peers that will comprise the next epoch.
+      (let [self       (net-id vnode)
+            new-cohort (set (peers vnode))
 
-          ; Increment the epoch and update the node set.
-          epoch (-> vnode
-                    :state
-                    (swap! (fn [state]
-                             (merge state {:epoch (inc (:epoch state))
-                                           :leader self
-                                           :type :candidate
-                                           :cohort new-cohort})))
-                    :epoch)
+            ; Increment the epoch and update the node set.
+            epoch (-> vnode
+                      :state
+                      (swap! (fn [state]
+                               (merge state {:epoch (inc (:epoch state))
+                                             :leader self
+                                             :type :candidate
+                                             :cohort new-cohort})))
+                      :epoch)
 
-          ; Check ZK's last leader information
-          old (deref (zk-leader vnode))]
-      (if (<= epoch (:epoch old))
-        ; We're outdated; fast-forward to the new epoch.
-        (do
-          (trace-log vnode "elect: Outdated epoch relative to ZK; aborting election. Fast-forwarding from" epoch "to" (:epoch old))
-          (swap! (:state vnode) (fn [state]
-                                  (if (<= (:epoch state) (:epoch old))
-                                    (merge state {:epoch (:epoch old)
-                                                  :leader false
-                                                  :type :follower
-                                                  :cohort (:cohort old)})
-                                    state))))
+            ; Check ZK's last leader information
+            old (deref (zk-leader vnode))]
+        (if (<= epoch (:epoch old))
+          ; We're outdated; fast-forward to the new epoch.
+          (do
+            (trace-log vnode "elect: Outdated epoch relative to ZK; aborting election. Fast-forwarding from" epoch "to" (:epoch old))
+            (swap! (:state vnode) (fn [state]
+                                    (if (<= (:epoch state) (:epoch old))
+                                      (merge state {:epoch (:epoch old)
+                                                    :leader false
+                                                    :type :follower
+                                                    :cohort (:cohort old)})
+                                      state))))
 
-        ; Issue requests to all nodes in old and new cohorts
-        (let [old-cohort  (set (:cohort old))
-              responses   (atom (list))
-              accepted?   (promise)
-              peers       (disj (set/union new-cohort old-cohort) self)]
-          (trace-log vnode "elect: Issuing requests for election for" epoch "transitioning from" old-cohort "to" new-cohort)
-          (doseq [node peers]
-            (net/req! (:net vnode) (list node) {:r 1}
-                      {:type :request-vote
-                       :partition (:partition vnode)
-                       :leader self
-                       :cohort new-cohort
-                       :epoch epoch}
-                      [[r]]
-                      (let [rs (swap! responses conj r)]
-                        (if (accept-newer-epoch! vnode r)
-                          ; Cancel request; we saw a newer epoch from a peer.
-                          (do
-                            (deliver accepted? false)
-                            (trace-log vnode "elect: aborting candidacy due to newer epoch"))
-                          ; Have we enough votes?
-                          (if (sufficient-votes? vnode old-cohort new-cohort rs)
+          ; Issue requests to all nodes in old and new cohorts
+          (let [old-cohort  (set (:cohort old))
+                responses   (atom (list))
+                accepted?   (promise)
+                peers       (disj (set/union new-cohort old-cohort) self)]
+            (trace-log vnode "elect: Issuing requests for election for" epoch "transitioning from" old-cohort "to" new-cohort)
+            (doseq [node peers]
+              (net/req! (:net vnode) (list node) {:r 1}
+                        {:type :request-vote
+                         :partition (:partition vnode)
+                         :leader self
+                         :cohort new-cohort
+                         :epoch epoch}
+                        [[r]]
+                        (let [rs (swap! responses conj r)]
+                          (if (accept-newer-epoch! vnode r)
+                            ; Cancel request; we saw a newer epoch from a peer.
                             (do
-                              (deliver accepted? true)
-                              (trace-log vnode "elect: Received enough votes:" rs))
-                            (when (<= (count peers) (count rs))
-                              (deliver accepted? false)
-                              (trace-log vnode "elect: all votes in; election was lost:" rs)))))))
+                              (trace-log vnode "elect: aborting candidacy due to newer epoch of" (:epoch r))
+                              (deliver accepted? false))
+                            ; Have we enough votes?
+                            (if (sufficient-votes? vnode old-cohort new-cohort rs)
+                              (do
+                                (trace-log vnode "elect: Received enough votes:" rs)
+                                (deliver accepted? true))
+                              (when (<= (count peers) (count rs))
+                                (trace-log vnode "elect: all votes in; election was lost:" rs)
+                                (deliver accepted? false)))))))
 
-          ; Await responses
-          (if-not (deref accepted? 5000 false)
-            (trace-log vnode "elect: election failed; not enough votes")
+            ; Await responses
+            (if-not (deref accepted? 5000 false)
+              (trace-log vnode "elect: election failed; not enough votes")
 
-            ; Sync from old cohort.
-            (if-not (sync-with-majority! vnode
-                                         old-cohort
-                                         skuld.aae/sync-from!)
-              (trace-log vnode "elect: Wasn't able to replicate from enough of old cohort; cannot become leader.")
-
-              ; Sync to new cohort.
+              ; Sync from old cohort.
               (if-not (sync-with-majority! vnode
-                                           new-cohort
-                                           skuld.aae/sync-to!)
-                (errorf "%s: elect: Wasn't able to replicate to enough of new cohort; cannot become leader." (full-id vnode))
+                                           old-cohort
+                                           skuld.aae/sync-from!)
+                (trace-log vnode "elect: Wasn't able to replicate from enough of old cohort; cannot become leader.")
 
-                ; Update ZK with new cohort and epoch--but only if nobody else
-                ; got there first.
-                (let [new-leader {:epoch epoch
-                                  :cohort new-cohort}
-                      set-leader (curator/swap!! (zk-leader vnode)
-                                                 (fn [current]
-                                                   (if (= old current)
-                                                     new-leader
-                                                     current)))]
-                  (if (not= new-leader set-leader)
-                    (trace-log vnode "elect: election failed: another leader updated zk")
+                ; Sync to new cohort.
+                (if-not (sync-with-majority! vnode
+                                             new-cohort
+                                             skuld.aae/sync-to!)
+                  (errorf "%s: elect: Wasn't able to replicate to enough of new cohort; cannot become leader." (full-id vnode))
 
-                    ; Success!
-                    (let [state (swap! (:state vnode)
-                                       (fn [state]
-                                         (if (= epoch (:epoch state))
-                                           ; Still waiting for responses
-                                           (assoc state :type :leader)
-                                           ; We voted for someone else in the
-                                           ; meantime
-                                           state)))]
-                      (trace-log vnode "elect: election successful: epoch is" epoch "for cohort" new-cohort)
-                      (broadcast-heartbeat! vnode))))))))))))
+                  ; Update ZK with new cohort and epoch--but only if nobody else
+                  ; got there first.
+                  (let [new-leader {:epoch epoch
+                                    :cohort new-cohort}
+                        set-leader (curator/swap!! (zk-leader vnode)
+                                                   (fn [current]
+                                                     (if (= old current)
+                                                       new-leader
+                                                       current)))]
+                    (if (not= new-leader set-leader)
+                      (trace-log vnode "elect: election failed: another leader updated zk")
+
+                      ; Success!
+                      (let [state (swap! (:state vnode)
+                                         (fn [state]
+                                           (if (= epoch (:epoch state))
+                                             ; Still waiting for responses
+                                             (assoc state :type :leader)
+                                             ; We voted for someone else in the
+                                             ; meantime
+                                             state)))]
+                        (trace-log vnode "elect: election successful: epoch is" epoch "for cohort" new-cohort)
+                        (broadcast-heartbeat! vnode)))))))))))))
 
 ;; Tasks
 
@@ -440,7 +440,7 @@
   [vnode task]
   (db/merge-task! (:db vnode) task)
   (queue/update! (:queue vnode) task)
-  (trace-log vnode "claim: merge-task:" task "queue:" (count (:queue vnode))))
+  (trace-log vnode "claim: merge-task:" task "queue:" (count (:queue vnode)) "tasks:" (tasks vnode)))
 
 (defn get-task
   "Returns a specific task by ID."
@@ -531,42 +531,47 @@
     (trace-log vnode "claim: queue:" (count (:queue vnode)))
     ; Look for the next available task
     (when-let [task-id (:id (queue/poll! (:queue vnode)))]
-      (trace-log vnode "claim: claiming task-id:" task-id)
+      (trace-log vnode "claim: claiming task-id:" task-id "tasks:" (tasks vnode))
       ; Attempt to claim a task locally.
-      (when-let [task (db/claim-task! (:db vnode) task-id dt)]
-        (trace-log vnode "claim: claiming task:" task)
-        (let [; Get claim details
-              i     (dec (count (:claims task)))
-              claim (nth (:claims task) i)
+      (if-let [task (db/claim-task! (:db vnode) task-id dt)]
+        (do
+          (trace-log vnode "claim: claiming task:" task)
+          (let [; Get claim details
+                 i     (dec (count (:claims task)))
+                 claim (nth (:claims task) i)
 
-              ; Try to replicate claim remotely
-              responses (net/sync-req! (:net vnode)
-                                       (disj cohort (net-id vnode))
-                                       {:r maj}
-                                       {:type   :request-claim
-                                        :epoch  cur-epoch
-                                        :id     (:id task)
-                                        :i      i
-                                        :claim  claim})
-              successes (count (remove :error responses))]
+                ; Try to replicate claim remotely
+                 responses (net/sync-req! (:net vnode)
+                                          (disj cohort (net-id vnode))
+                                          {:r maj}
+                                          {:type   :request-claim
+                                           :epoch  cur-epoch
+                                           :id     (:id task)
+                                           :i      i
+                                           :claim  claim})
+                 successes (count (remove :error responses))]
 
-          ; Check that we're still in the same epoch; a leader could
-          ; have subsumed us.
-          (when (not= cur-epoch (epoch vnode))
-            (throw (IllegalStateException. (str "epoch changed from "
-                                           cur-epoch
-                                           " to "
-                                           (epoch vnode)
-                                           ", claim coordinator aborting"))))
+            ; Check that we're still in the same epoch; a leader could
+            ; have subsumed us.
+            (when (not= cur-epoch (epoch vnode))
+              (throw (IllegalStateException. (str "epoch changed from "
+                                                  cur-epoch
+                                                  " to "
+                                                  (epoch vnode)
+                                                  ", claim coordinator aborting"))))
 
-          (if (<= maj successes)
-            (do
-              ; We succeeded at this claim, so our cohort has updated their last-leader-msg-time
-              (update-last-leader-msg-time! vnode)
-              task)
-            (throw (IllegalStateException. (str "needed " maj
-                                           " acks from followers, only received "
-                                           successes)))))))))
+            (if (<= maj successes)
+              (do
+                ; We succeeded at this claim, so our cohort has updated their last-leader-msg-time
+                (update-last-leader-msg-time! vnode)
+                task)
+              (throw (IllegalStateException. (str "needed " maj
+                                                  " acks from followers, only received "
+                                                  successes))))))
+
+        ; The ID in the queue did not exist in the database
+        (recur vnode dt)))))
+
 
 (defn complete!
   "Completes the given task in the specified claim. Msg should contain:
@@ -585,4 +590,5 @@
   [vnode]
   (trace-log vnode "wiping vnode")
   (db/wipe! (:db vnode))
+  (.clear (:queue vnode))
   vnode)

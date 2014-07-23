@@ -297,7 +297,11 @@
   [node msg]
   ; Find the next task
   (let [res
-  (loop [[vnode & vnodes] (->> node vnodes vals shuffle)]
+  (loop [[vnode & vnodes] (->> node
+                               vnodes
+                               vals
+                               (filter vnode/leader?)
+                               shuffle)]
     (when vnode
       (trace-log node "claim-local: trying to claim from" (vnode/full-id vnode))
       (let [task (try
@@ -321,6 +325,7 @@
 (defn claim!
   "Tries to claim a task."
   [node msg]
+  (trace-log node "claim: processing a claim. will check with:" (set (peers node)))
   ; Try a local claim first
   (or (let [t (claim-local! node msg)]
         (and (:task t) t))
@@ -623,7 +628,6 @@
   (locking node
     (when-not (shutdown? node)
       (when-let [c (:clock-sync node)] (clock-sync/shutdown! c))
-      (when-let [s (:scanner node)]    (scanner/shutdown! s))
       (when-let [aae (:aae node)]      (aae/shutdown! aae))
       (when-let [p (:politics node)]   (politics/shutdown! p))
       (when-let [net (:net node)]      (net/shutdown! net))
