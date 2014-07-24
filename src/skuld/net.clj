@@ -186,7 +186,7 @@
       (exceptionCaught [^ChannelHandlerContext ctx ^Throwable cause]
         (let [peer (.. ctx channel (attr peer-attr) get)]
           (condp instance? cause
-            ConnectException (warnf "client handle caught exception with {}: {}" peer (.getMessage cause))
+            ConnectException (warnf "client handle caught exception with %s: %s" peer (.getMessage cause))
                              (warn cause "client handle caught exception with" peer)))))))
 
 (defn client
