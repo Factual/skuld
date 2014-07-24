@@ -289,18 +289,20 @@
   {:count (->> node
                vnodes
                vals
-               vnode/count-queue
+               (map vnode/count-queue)
                (reduce +))})
 
 (defn claim-local!
   "Tries to claim a task from a local vnode."
   [node msg]
   ; Find the next task
-  (let [res
-  (loop [[vnode & vnodes] (->> node vnodes vals shuffle)]
-    (when vnode
-      (trace-log node "claim-local: trying to claim from" (vnode/full-id vnode))
-      (let [task (try
+  (loop [[vnode & vnodes] (->> node
+                               vnodes
+                               vals
+                               (filter vnode/leader?)
+                               shuffle)]
+    (let [task (when vnode
+                 (try
                    (if-let [ta (vnode/claim! vnode (or (:dt msg) 10000))]
                      (do
                        (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
@@ -311,11 +313,10 @@
                       :retry)
                    (catch Throwable t
                       (warn t (trace-log-prefix node) "caught while claiming from vnode" (vnode/full-id vnode))
-                      :retry))]
-        (if (not= :retry task)
-          {:task task}
-          (recur vnodes)))))]
-    (trace-log node "claim-local: returning:" res)))
+                      :retry)))]
+      (if (not= :retry task)
+        {:task task}
+        (recur vnodes)))))
 
 
 (defn claim!
@@ -331,7 +332,6 @@
           ; Done
           {}
           (do
-            (trace-log node "claim: asking" peer "for a claim")
             (let [[response] (net/sync-req! (:net node) [peer] {}
                                             (assoc msg :type :claim-local))]
               (if (:task response)

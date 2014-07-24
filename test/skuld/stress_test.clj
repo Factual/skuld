@@ -43,7 +43,8 @@
                           (if (= (count ids) (count claims))
                             claims
                             (do
-                              (Thread/sleep 500)
+                              (if-not t
+                                (Thread/sleep 500))
                               (recur claims)))))
 
                       ; Out of claims?

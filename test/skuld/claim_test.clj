@@ -26,7 +26,7 @@
   (elect! *nodes*)
   (let [id (client/enqueue! *client* {:w 3} {:data "hi"})]
     (is id)
-    (let [task (client/claim! *client* {:timeout 5000} 1000)]
+    (let [task (client/claim! *client* 1000)]
       (is (= id (:id task)))
       (is (task/claimed? task)))))
 
