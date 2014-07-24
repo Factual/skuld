@@ -439,8 +439,7 @@
   "Takes a task and merges it into this vnode."
   [vnode task]
   (db/merge-task! (:db vnode) task)
-  (queue/update! (:queue vnode) task)
-  (trace-log vnode "claim: merge-task:" task "queue:" (count (:queue vnode)) "tasks:" (tasks vnode)))
+  (queue/update! (:queue vnode) task))
 
 (defn get-task
   "Returns a specific task by ID."
@@ -528,10 +527,8 @@
     (when-not (= :leader (:type state))
       (throw (IllegalStateException. (format "can't initiate claim: not a leader. current vnode type: %s" (:type state)))))
 
-    (trace-log vnode "claim: queue:" (count (:queue vnode)))
     ; Look for the next available task
     (when-let [task-id (:id (queue/poll! (:queue vnode)))]
-      (trace-log vnode "claim: claiming task-id:" task-id "tasks:" (tasks vnode))
       ; Attempt to claim a task locally.
       (if-let [task (db/claim-task! (:db vnode) task-id dt)]
         (do

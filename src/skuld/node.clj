@@ -302,9 +302,9 @@
                                vals
                                (filter vnode/leader?)
                                shuffle)]
-    (when vnode
-      (trace-log node "claim-local: trying to claim from" (vnode/full-id vnode))
-      (let [task (try
+      (let [task (when vnode
+                   (trace-log node "claim-local: trying to claim from" (vnode/full-id vnode))
+                   (try
                    (if-let [ta (vnode/claim! vnode (or (:dt msg) 10000))]
                      (do
                        (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
@@ -315,11 +315,12 @@
                       :retry)
                    (catch Throwable t
                       (warn t (trace-log-prefix node) "caught while claiming from vnode" (vnode/full-id vnode))
-                      :retry))]
+                      :retry)))]
         (if (not= :retry task)
           {:task task}
-          (recur vnodes)))))]
-    (trace-log node "claim-local: returning:" res)))
+          (recur vnodes))))]
+    (trace-log node "claim-local: returning:" res)
+    res))
 
 
 (defn claim!
@@ -327,6 +328,8 @@
   [node msg]
   (trace-log node "claim: processing a claim. will check with:" (set (peers node)))
   ; Try a local claim first
+  (let [task
+
   (or (let [t (claim-local! node msg)]
         (and (:task t) t))
       ; Ask each peer in turn for a task
@@ -339,9 +342,12 @@
             (trace-log node "claim: asking" peer "for a claim")
             (let [[response] (net/sync-req! (:net node) [peer] {}
                                             (assoc msg :type :claim-local))]
+              (trace-log node "claim:" peer "returned:" response)
               (if (:task response)
                 response
-                (recur peers))))))))
+                (recur peers)))))))]
+    (trace-log node "claim: returning:" task)
+    task))
 
 (defn request-claim!
   "Accepts a request from a leader to claim a given task."
