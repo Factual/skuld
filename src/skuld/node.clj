@@ -289,7 +289,7 @@
   {:count (->> node
                vnodes
                vals
-               vnode/count-queue
+               (map vnode/count-queue)
                (reduce +))})
 
 (defn claim-local!
@@ -302,7 +302,6 @@
                                (filter vnode/leader?)
                                shuffle)]
     (let [task (when vnode
-                 (trace-log node "claim-local: trying to claim from" (vnode/full-id vnode))
                  (try
                    (if-let [ta (vnode/claim! vnode (or (:dt msg) 10000))]
                      (do
@@ -333,10 +332,8 @@
           ; Done
           {}
           (do
-            (trace-log node "claim: asking" peer "for a claim")
             (let [[response] (net/sync-req! (:net node) [peer] {}
                                             (assoc msg :type :claim-local))]
-              (trace-log node "claim:" peer "returned:" response)
               (if (:task response)
                 response
                 (recur peers))))))))
