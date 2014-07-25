@@ -69,6 +69,15 @@
             (shutdown! node))
           nodes)))
 
+(defn wipe-nodes!
+  "Wipe a seq of nodes."
+  [nodes]
+  (doall
+    (pmap (fn wipe [node]
+            (wipe-local! node nil))
+          nodes)))
+
+
 (defn partition-available?
   "Given a set of vnodes for a partition, do they comprise an available
   cohort?"
@@ -113,11 +122,7 @@
            (binding [*zk*    zk
                      *nodes* (start-nodes! zk)]
              (try
-               (binding [*client* (client/client *nodes*)]
-                 (try
-                   (f)
-                   (finally
-                     (client/shutdown! *client*))))
+               (f)
                (finally
                  (wipe-and-shutdown-nodes! *nodes*))))))
 
@@ -125,19 +130,23 @@
   [f]
   ; If any nodes were killed by the test, re-initialize the cluster before
   ; proceeding.
-  (if (not-any? shutdown? *nodes*)
-    (do
-      (client/wipe! *client*)
-      (f))
-    (do
-      (info :repairing-cluster)
-      (wipe-and-shutdown-nodes! *nodes*)
-      (binding [*nodes* (start-nodes! *zk*)]
-        (try
-          (client/wipe! *client*)
-          (f)
-          (finally
-            (wipe-and-shutdown-nodes! *nodes*)))))))
+  (binding [*client* (client/client *nodes*)]
+    (try
+      (if (not-any? shutdown? *nodes*)
+        (do
+          (info "wiping nodes:" (map net/string-id *nodes*))
+          (wipe-nodes! *nodes*)
+          (f))
+        (do
+          (info "repairing cluster by shutting down, and restarting nodes")
+          (wipe-and-shutdown-nodes! *nodes*)
+          (binding [*nodes* (start-nodes! *zk*)]
+              (info "wiping nodes:" (map net/string-id *nodes*))
+              (wipe-nodes! *nodes*)
+              (f))))
+      (finally
+        (client/shutdown! *client*)))))
+
 
 (use-fixtures :once once)
 (use-fixtures :each each)
