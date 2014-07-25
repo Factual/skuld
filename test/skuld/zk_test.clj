@@ -19,4 +19,5 @@
        (try
          ~@body
          (finally
+           (.stop zk#)
            (.close zk#))))))
