@@ -64,18 +64,18 @@
   "Wipe and shutdown a seq of nodes."
   [nodes]
   (->> nodes
-    (pmap (fn wipe-and-shutdown [node]
-            (wipe-local! node nil)
-            (shutdown! node)))
-    dorun))
+       (pmap (fn wipe-and-shutdown [node]
+               (wipe-local! node nil)
+               (shutdown! node)))
+       dorun))
 
 (defn wipe-nodes!
   "Wipe a seq of nodes."
   [nodes]
-  (dorun
-    (pmap (fn wipe [node]
-            (wipe-local! node nil))
-          nodes)))
+  (->> nodes
+       (pmap (fn wipe [node]
+               (wipe-local! node nil)))
+       dorun))
 
 
 (defn partition-available?
