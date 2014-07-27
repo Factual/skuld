@@ -63,16 +63,16 @@
 (defn wipe-and-shutdown-nodes!
   "Wipe and shutdown a seq of nodes."
   [nodes]
-  (doall
+  (->> nodes
     (pmap (fn wipe-and-shutdown [node]
             (wipe-local! node nil)
-            (shutdown! node))
-          nodes)))
+            (shutdown! node)))
+    dorun))
 
 (defn wipe-nodes!
   "Wipe a seq of nodes."
   [nodes]
-  (doall
+  (dorun
     (pmap (fn wipe [node]
             (wipe-local! node nil))
           nodes)))
@@ -124,6 +124,7 @@
              (try
                (f)
                (finally
+                 (info "wiping and shutting down nodes")
                  (wipe-and-shutdown-nodes! *nodes*))))))
 
 (defn each
@@ -140,10 +141,10 @@
         (do
           (info "repairing cluster by shutting down, and restarting nodes")
           (wipe-and-shutdown-nodes! *nodes*)
-          (binding [*nodes* (start-nodes! *zk*)]
-              (info "wiping nodes:" (map net/string-id *nodes*))
-              (wipe-nodes! *nodes*)
-              (f))))
+          (set! *nodes* (start-nodes! *zk*))
+          (info "wiping nodes:" (map net/string-id *nodes*))
+          (wipe-nodes! *nodes*)
+          (f)))
       (finally
         (client/shutdown! *client*)))))
 
