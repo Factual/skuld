@@ -104,8 +104,7 @@
 ;                                       vnode/state))
 ;                    unelected)))
         (doseq [vnodes unelected]
-          (with-redefs [vnode/election-timeout 0]
-            (vnode/elect! (rand-nth vnodes))))
+          (vnode/elect! (rand-nth vnodes)))
         (Thread/sleep 100)
         (recur (remove partition-available? unelected)))))
 
