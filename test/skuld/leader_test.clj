@@ -71,14 +71,14 @@
             (test-election-consistent vnodes)))
 
         ; Initiate randomized elections
-        (->> vnodes
-             (map #(future
-                     (dotimes [i (rand-int 10)]
-                       (with-redefs [vnode/election-timeout 0]
+        (with-redefs [vnode/election-timeout 0]
+          (->> vnodes
+               (map #(future
+                       (dotimes [i (rand-int 10)]
                          (vnode/elect! %))
-                       (Thread/sleep (rand-int 10)))))
-             (map deref)
-             doall)
+                         (Thread/sleep (rand-int 10))))
+               (map deref)
+               doall))
 
         (deliver running false)
         (test-election-consistent vnodes)))))

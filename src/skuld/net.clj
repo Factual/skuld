@@ -41,7 +41,8 @@
            (io.netty.handler.codec.protobuf ProtobufVarint32FrameDecoder
                                             ProtobufVarint32LengthFieldPrepender)
            (io.netty.util Attribute
-                          AttributeKey)))
+                          AttributeKey)
+           (java.nio.channels ClosedChannelException)))
 
 (def logger (agent nil))
 (defn log-print
@@ -109,13 +110,17 @@
       (future
         (when-let [response (try (f message)
                                  (catch Throwable t
-                                   (locking *out*
-                                     (println "Node handler caught:")
-                                     (.printStackTrace t))
-                                   {:error (str (.getMessage t)
-                                                (with-out-str
-                                                  (trace/print-cause-trace t)))}))]
-        (.write ctx (assoc response :request-id (:request-id message))))))))
+                                        (warn t "net: server handler caught an exception")
+                                        {:error (str (.getMessage t)
+                                                     (with-out-str
+                                                       (trace/print-cause-trace t)))}))]
+          (.write ctx (assoc response :request-id (:request-id message))))))
+    (exceptionCaught [^ChannelHandlerContext ctx ^Throwable cause]
+      (let [local (.. ctx channel localAddress)
+            remote (.. ctx channel remoteAddress)]
+        (condp instance? cause
+          ClosedChannelException (warnf "net: server handler found a closed channel between %s -> %s" local remote)
+          (warn cause "net: server handler caught exception with %s -> %s" local remote))))))
 
 (defonce peer-attr
   (AttributeKey. "skuld-peer"))
