@@ -585,7 +585,6 @@
 (defn wipe!
   "Wipe a vnode's data clean."
   [vnode]
-  (trace-log vnode "wiping vnode")
   (db/wipe! (:db vnode))
   (.clear (:queue vnode))
   vnode)

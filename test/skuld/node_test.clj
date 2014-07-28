@@ -63,11 +63,20 @@
 (defn wipe-and-shutdown-nodes!
   "Wipe and shutdown a seq of nodes."
   [nodes]
-  (doall
-    (pmap (fn wipe-and-shutdown [node]
-            (wipe-local! node nil)
-            (shutdown! node))
-          nodes)))
+  (->> nodes
+       (pmap (fn wipe-and-shutdown [node]
+               (wipe-local! node nil)
+               (shutdown! node)))
+       dorun))
+
+(defn wipe-nodes!
+  "Wipe a seq of nodes."
+  [nodes]
+  (->> nodes
+       (pmap (fn wipe [node]
+               (wipe-local! node nil)))
+       dorun))
+
 
 (defn partition-available?
   "Given a set of vnodes for a partition, do they comprise an available
@@ -95,8 +104,7 @@
 ;                                       vnode/state))
 ;                    unelected)))
         (doseq [vnodes unelected]
-          (with-redefs [vnode/election-timeout 0]
-            (vnode/elect! (rand-nth vnodes))))
+          (vnode/elect! (rand-nth vnodes)))
         (Thread/sleep 100)
         (recur (remove partition-available? unelected)))))
 
@@ -113,31 +121,32 @@
            (binding [*zk*    zk
                      *nodes* (start-nodes! zk)]
              (try
-               (binding [*client* (client/client *nodes*)]
-                 (try
-                   (f)
-                   (finally
-                     (client/shutdown! *client*))))
+               (f)
                (finally
+                 (info "wiping and shutting down nodes")
                  (wipe-and-shutdown-nodes! *nodes*))))))
 
 (defn each
   [f]
   ; If any nodes were killed by the test, re-initialize the cluster before
   ; proceeding.
-  (if (not-any? shutdown? *nodes*)
-    (do
-      (client/wipe! *client*)
-      (f))
-    (do
-      (info :repairing-cluster)
-      (wipe-and-shutdown-nodes! *nodes*)
-      (binding [*nodes* (start-nodes! *zk*)]
-        (try
-          (client/wipe! *client*)
-          (f)
-          (finally
-            (wipe-and-shutdown-nodes! *nodes*)))))))
+  (binding [*client* (client/client *nodes*)]
+    (try
+      (if (not-any? shutdown? *nodes*)
+        (do
+          (info "wiping nodes:" (map net/string-id *nodes*))
+          (wipe-nodes! *nodes*)
+          (f))
+        (do
+          (info "repairing cluster by shutting down, and restarting nodes")
+          (wipe-and-shutdown-nodes! *nodes*)
+          (set! *nodes* (start-nodes! *zk*))
+          (info "wiping nodes:" (map net/string-id *nodes*))
+          (wipe-nodes! *nodes*)
+          (f)))
+      (finally
+        (client/shutdown! *client*)))))
+
 
 (use-fixtures :once once)
 (use-fixtures :each each)
