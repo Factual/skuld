@@ -53,10 +53,12 @@
         (swap! count-cache inc))))
 
   (close! [db]
-    (swap! running (fn [was]
-                     (when was
-                       (.close ^Closeable level)
-                       false))))
+    (locking db
+      (swap! running (fn [was]
+                       (when was
+                         (.close ^Closeable level)
+                         false)))))
+
   
   (wipe! [db]
     (locking db
