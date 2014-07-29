@@ -52,7 +52,7 @@
                                      (assoc queues queue-name (named-queue))
                                      queues)))
                           queue-name))
-          ^ConcurrentSkipListSet q (:queue named-queue)]
+          q ^ConcurrentSkipListSet (:queue named-queue)]
 
       ; Mark the last time the queue was used
       (swap! (:last-modified named-queue) max (flake/linear-time))
