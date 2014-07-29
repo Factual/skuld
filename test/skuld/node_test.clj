@@ -205,7 +205,7 @@
     (is (= n (client/count-tasks *client*)))
 
     ;; Currently broken
-    ;; (is (= n (client/count-queue *client*)))
+    (is (= n (client/count-queue *client*)))
     ))
 
 (deftest count-http-test
