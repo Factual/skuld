@@ -29,7 +29,7 @@
   :state"
   [opts]
   (info (format "%s/%s:" (net/string-id (net/id (:net opts))) (:partition opts)) "starting vnode")
-  (let [queue   (queue/queue)
+  (let [queue   (queue/queues)
         vnode   {:partition (:partition opts)
                  :net       (:net opts)
                  :router    (:router opts)
@@ -453,9 +453,9 @@
 
 (defn count-queue
   "Estimates the number of enqueued tasks."
-  [vnode]
+  [vnode queue-name]
   (if (leader? vnode)
-    (count (:queue vnode))
+    (queue/count-queue (:queue vnode) queue-name)
     0))
 
 (defn count-tasks
@@ -512,7 +512,7 @@
 (defn claim!
   "Claims a particular task ID from this vnode, for dt milliseconds. Returns the
   claimed task."
-  [vnode dt]
+  [vnode queue-name dt]
   (let [state     (state vnode)
         cur-epoch (:epoch state)
         cohort    (:cohort state)
@@ -528,7 +528,7 @@
       (throw (IllegalStateException. (format "can't initiate claim: not a leader. current vnode type: %s" (:type state)))))
 
     ; Look for the next available task
-    (when-let [task-id (:id (queue/poll! (:queue vnode)))]
+    (when-let [task-id (:id (queue/poll! (:queue vnode) queue-name))]
       ; Attempt to claim a task locally.
       (if-let [task (db/claim-task! (:db vnode) task-id dt)]
         (do
@@ -567,7 +567,7 @@
                                                   successes))))))
 
         ; The ID in the queue did not exist in the database
-        (recur vnode dt)))))
+        (recur vnode queue-name dt)))))
 
 
 (defn complete!
