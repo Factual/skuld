@@ -259,7 +259,7 @@ skuld.bin=> (count-tasks c)
 0
 
 ; We can enqueue a task with some payload
-skuld.bin=> (enqueue! c {:data "sup?"})
+skuld.bin=> (enqueue! c {:queue "general" :data "sup?"})
 #<Bytes 00000140d20fa086800000019dace3c8ab1f6f82>
 
 ; Now there's 1 task
@@ -274,7 +274,7 @@ skuld.bin=> (pprint (list-tasks c))
 nil
 
 ; And now we can claim a task for 10 seconds
-skuld.bin=> (def t (claim! c 10000))
+skuld.bin=> (def t (claim! c "general" 10000))
 #'skuld.bin/t
 skuld.bin=> (pprint t)
 {:data "sup?",
@@ -283,13 +283,13 @@ skuld.bin=> (pprint t)
 nil
 
 ; We can't claim any other tasks during this time
-skuld.bin=> (claim! c 10000)
+skuld.bin=> (claim! c "general" 10000)
 nil
 
 ; But if we wait long enough, Skuld will decide the claim has expired. Once a
 ; quorum of nodes agree that the claim is outdated, we can re-claim the same
 ; task:
-skuld.bin=> (Thread/sleep 60000) (def t2 (claim! c 10000))
+skuld.bin=> (Thread/sleep 60000) (def t2 (claim! c "general" 10000))
 nil
 #'skuld.bin/t2
 skuld.bin=> t2
