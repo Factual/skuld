@@ -90,7 +90,8 @@
   [node req id]
   (let [id  (b64->id id)
         cid (-> req :body :cid)
-        msg {:task-id id :claim-id cid}
+        w   (-> req :query-params :w parse-int)
+        msg {:task-id id :claim-id cid :w w}
         ret (node/complete! node msg)]
     (POST req (dissoc ret :responses))))
 
