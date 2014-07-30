@@ -24,32 +24,29 @@
 
 (deftest claim-test
   (elect! *nodes*)
-  (let [id (client/enqueue! *client* {:w 3} {:data "hi"})]
+  (let [id (client/enqueue! *client* {:w 3} {:queue "queue1" :data "hi"})]
     (is id)
-    (let [task (client/claim! *client* 1000)]
+    (let [task (client/claim! *client* "queue1" 1000)]
       (is (= id (:id task)))
       (is (task/claimed? task)))))
 
 (deftest reclaim-test
   (elect! *nodes*)
   (with-redefs [task/clock-skew-buffer 500]
-    (let [id (client/enqueue! *client* {:w 3} {:data "maus"})]
-      (is (= id (:id (client/claim! *client* 1000))))
+    (let [id (client/enqueue! *client* {:w 3} {:queue "queue2" :data "maus"})]
+      (is (= id (:id (client/claim! *client* "queue2" 1000))))
       
       ; Can't reclaim, because it's already claimed
-      (is (nil? (client/claim! *client* 1000)))
+      (is (nil? (client/claim! *client* "queue2" 1000)))
       
       ; Can't reclaim after 1000ms because clock skew buffer still holds
       (Thread/sleep 1001)
-      (is (nil? (client/claim! *client* 1000)))
+      (is (nil? (client/claim! *client* "queue2" 1000)))
       
       ; But after the buffer has elapsed, good to go. 
-      (Thread/sleep 500)
+      (Thread/sleep 1500)
 
-      ; Let the scanner run too. Ugh, hack hack hack.
-      (Thread/sleep 2000)
-
-      (let [t (client/claim! *client* 1000)]
+      (let [t (client/claim! *client* "queue2" 1000)]
         (is (= id (:id t)))
         (is (= 2 (count (:claims t))))
         (is (= "maus" (:data t)))))))
@@ -57,8 +54,8 @@
 (deftest complete-test
   (elect! *nodes*)
   (with-redefs [task/clock-skew-buffer 0]
-    (let [id (client/enqueue! *client* {:data "sup"})]
-      (is (client/claim! *client* 1))
+    (let [id (client/enqueue! *client* {:queue "queue3" :data "sup"})]
+      (is (client/claim! *client* "queue3" 1))
 
       ; Isn't completed
       (is (not (task/completed? (client/get-task *client* id))))
@@ -70,4 +67,4 @@
 
       ; Can't re-claim.
       (Thread/sleep 2)
-      (is (nil? (client/claim! *client* 100))))))
+      (is (nil? (client/claim! *client* "queue3" 100))))))

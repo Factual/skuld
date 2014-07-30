@@ -500,10 +500,12 @@
     (locking vnode
       (assert (not (zombie? vnode)))
       (if (= (:epoch msg) (epoch vnode))
-        (do
-          (->> (db/claim-task! (:db vnode) id i claim)
-               (queue/update! (:queue vnode)))
-          {})
+        (if-let [task (db/claim-task! (:db vnode) id i claim)]
+          (do
+            (queue/update! (:queue vnode) task)
+            {})
+          {:error (str "task " id " was not found on vnode " (full-id vnode))})
+
         {:error (str "leader epoch " epoch
                      " does not match local epoch " (epoch vnode))}))
     (catch IllegalStateException e

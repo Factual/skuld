@@ -26,7 +26,7 @@
 
   (let [n 100
         ids (->> (repeatedly (fn []
-                               (client/enqueue! *client* {:w 3} {:data "sup"})))
+                               (client/enqueue! *client* {:w 3} {:queue "queue12" :data "sup"})))
                  (take n)
                  doall)]
 
@@ -35,7 +35,7 @@
     ; Claim all extant IDs
     (let [deadline (+ (flake/linear-time) 20000)
            claims  (loop [claims {}]
-                    (if-let [t (client/claim! *client* 100000)]
+                    (if-let [t (client/claim! *client* "queue12" 100000)]
                       (do
                         ; Make sure we never double-claim
                         (assert (not (get claims (:id t))))
@@ -65,10 +65,10 @@
   (elect! *nodes*)
   
   ; Enqueue something and claim it.
-  (let [id       (client/enqueue! *client* {:w 3} {:data "meow"})
+  (let [id       (client/enqueue! *client* {:w 3} {:queue "queue13" :data "meow"})
         deadline (+ (flake/linear-time) 20000)
         claim    (loop []
-                   (if-let [claim (client/claim! *client* 100000)]
+                   (if-let [claim (client/claim! *client* "queue13" 100000)]
                      claim
                      (when (< (flake/linear-time) deadline)
                        (Thread/sleep 500)
@@ -131,6 +131,6 @@
 
       (let [c (client/client [(select-keys (first alive) [:host :port])])]
         (try
-          (is (not (client/claim! c 1000)))
+          (is (not (client/claim! c "queue13" 1000)))
           (finally
             (client/shutdown! c)))))))

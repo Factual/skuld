@@ -277,20 +277,23 @@
   "Estimates the number of enqueued tasks."
   [node msg]
   ; Issue requests to all nodes for their local counts
-  (let [peers (peers node)]
+  (let [peers (peers node)
+        queue (:queue msg)]
     {:count (->> (net/sync-req! (:net node) peers {:r (count peers)}
-                                {:type :count-queue-local})
+                                {:type  :count-queue-local
+                                 :queue queue})
                  (map :count)
                  (reduce +))}))
 
 (defn count-queue-local
   "Estimates the number of enqueued tasks on this node."
   [node msg]
-  {:count (->> node
-               vnodes
-               vals
-               (map vnode/count-queue)
-               (reduce +))})
+  (let [queue (:queue msg)]
+    {:count (->> node
+                 vnodes
+                 vals
+                 (map #(vnode/count-queue % queue))
+                 (reduce +))}))
 
 (defn claim-local!
   "Tries to claim a task from a local vnode."
@@ -301,23 +304,24 @@
                                vals
                                (filter vnode/leader?)
                                shuffle)]
-    (let [task (when vnode
-                 (try
-                   (if-let [ta (vnode/claim! vnode (or (:dt msg) 10000))]
-                     (do
-                       (trace-log node "claim-local: claim from" (vnode/full-id vnode) "returned task:" ta)
-                       ta)
-                     :retry)
-                   (catch IllegalStateException ex
-                      (trace-log node (format "claim-local: failed to claim from %s: %s" (vnode/full-id vnode) (.getMessage ex)))
+    (let [queue (:queue msg)
+          dt    (or (:dt msg) 10000)
+          task  (when vnode
+                  (try
+                    (if-let [ta (vnode/claim! vnode queue dt)]
+                      (do
+                        (trace-log node (format "claim-local: claim from %s on %s returned task: %s" (vnode/full-id vnode) queue ta))
+                        ta)
                       :retry)
-                   (catch Throwable t
-                      (warn t (trace-log-prefix node) "caught while claiming from vnode" (vnode/full-id vnode))
+                    (catch IllegalStateException ex
+                      (trace-log node (format "claim-local: failed to claim from %s on %s: %s" (vnode/full-id vnode) queue (.getMessage ex)))
+                      :retry)
+                    (catch Throwable t
+                      (warn t (trace-log-prefix node) "caught while claiming from vnode" (vnode/full-id vnode) "on" queue)
                       :retry)))]
       (if (not= :retry task)
         {:task task}
         (recur vnodes)))))
-
 
 (defn claim!
   "Tries to claim a task."

@@ -41,7 +41,7 @@
   [queues task]
   (let [queue-name (:queue task)]
     (if-not queue-name
-      (throw (IllegalArgumentException. "Task did not specify a queue")))
+      (throw (IllegalArgumentException. (str "Task did not specify a queue: " task))))
 
     (let [named-queue (if-let [queue (get @queues queue-name)]
                         queue

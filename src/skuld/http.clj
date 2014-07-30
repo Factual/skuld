@@ -75,14 +75,18 @@
 (defn- count-queue
   "Like `node/count-queue`, but wrapped around an HTTP request."
   [node req]
-  (let [r (-> req :query-params :r parse-int)]
-    (GET req (node/count-queue node {:r r}))))
+  (let [r     (-> req :query-params :r parse-int)
+        queue (-> req :query-params :queue)]
+    (GET req (node/count-queue node {:r     r
+                                     :queue queue}))))
 
 (defn- claim!
   "Like `node/claim!`, but wrapped around an HTTP request."
   [node req]
-  (let [dt (-> req :body :dt)
-        ret (node/claim! node {:dt dt})]
+  (let [dt    (-> req :body :dt)
+        queue (-> req :body :queue)
+        ret (node/claim! node {:queue queue
+                               :dt    dt})]
     (POST req (dissoc ret :request-id))))
 
 (defn- complete!
