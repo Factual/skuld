@@ -44,11 +44,12 @@
 
 (defn claim!
   "Claim a task for dt milliseconds. Returns a task."
-  ([client dt]
-   (claim! client {} dt))
-  ([client opts dt]
-   (:task (sync-req! client opts {:type :claim
-                                  :dt   dt}))))
+  ([client queue dt]
+   (claim! client {} queue dt))
+  ([client opts queue dt]
+   (:task (sync-req! client opts {:type  :claim
+                                  :queue queue
+                                  :dt    dt}))))
 
 (defn complete!
   "Complete a task with the given task ID and claim ID."
@@ -76,8 +77,9 @@
 
 (defn count-queue
   "Returns a count of how many tasks are claimable."
-  [client]
-  (:count (sync-req! client {} {:type :count-queue})))
+  [client queue]
+  (:count (sync-req! client {} {:type  :count-queue
+                                :queue queue})))
 
 (defn list-tasks
   "Returns a list of tasks."

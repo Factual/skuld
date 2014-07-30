@@ -183,13 +183,14 @@
 
 (deftest enqueue-test
   ; Enqueue a task
-  (let [id (client/enqueue! *client* {:data "hi there"})]
+  (let [id (client/enqueue! *client* {:queue "queue4" :data "hi there"})]
     (is id)
     (is (instance? Bytes id))
 
     ; Read it back
     (is (= (client/get-task *client* {:r 3} id)
            {:id id
+            :queue "queue4"
             :claims []
             :data "hi there"}))))
 
@@ -200,12 +201,11 @@
   ; Enqueue a few tasks
   (let [n 10]
     (dotimes [i n]
-      (client/enqueue! *client* {:w 3} {:data "sup"}))
+      (client/enqueue! *client* {:w 3} {:queue "queue5" :data "sup"}))
 
     (is (= n (client/count-tasks *client*)))
 
-    ;; Currently broken
-    (is (= n (client/count-queue *client*)))
+    (is (= n (client/count-queue *client* "queue5")))
     ))
 
 (deftest count-http-test
@@ -214,7 +214,7 @@
   (let [n 10]
     (dotimes [i n]
       (http/post "http://127.0.0.1:13100/tasks/enqueue"
-                 {:form-params {:task {:data "sup"} :w 3}
+                 {:form-params {:task {:queue "queue6" :data "sup"} :w 3}
                   :content-type :json
                   :as :json}))
 
@@ -227,12 +227,13 @@
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))
 
-    ;; Currently broken
-    ;;(let [resp (http/get "http://127.0.0.1:13100/queue/count" {:as :json})
-    ;;      content-type (get-in resp [:headers "content-type"])]
-    ;;  (is (= 200 (:status resp)))
-    ;;  (is (= "application/json;charset=utf-8" content-type))
-    ;;  (is (= n (-> resp :body :count))))
+    (let [resp (http/get "http://127.0.0.1:13100/queue/count"
+                         {:query-params {:queue "queue6"}
+                          :as :json})
+          content-type (get-in resp [:headers "content-type"])]
+      (is (= 200 (:status resp)))
+      (is (= "application/json;charset=utf-8" content-type))
+      (is (= n (-> resp :body :count))))
     (let [resp (http/post "http://127.0.0.1:13100/queue/count"
                           {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
@@ -241,7 +242,7 @@
   ; Enqueue
   (let [n 10]
     (dotimes [i n]
-      (client/enqueue! *client* {:w 3} {:data "sup"}))
+      (client/enqueue! *client* {:w 3} {:queue "queue7" :data "sup"}))
    
     ; List
     (let [tasks (client/list-tasks *client*)]
@@ -252,7 +253,7 @@
 (deftest list-tasks-http-test
   (let [n 10]
     (dotimes [i n]
-      (client/enqueue! *client* {:w 3} {:data "sup"}))
+      (client/enqueue! *client* {:w 3} {:queue "queue8" :data "sup"}))
 
     (let [resp (http/get "http://127.0.0.1:13100/tasks/list" {:as :json})
           content-type (get-in resp [:headers "content-type"])
@@ -269,7 +270,7 @@
 
 (deftest get-task-http-test
   (let [id (http/post "http://127.0.0.1:13100/tasks/enqueue"
-                        {:form-params {:task {:data "sup"} :w 3}
+                        {:form-params {:task {:queue "queue9" :data "sup"} :w 3}
                          :content-type :json
                          :as :json})
         id (-> id :body :id)]
@@ -286,7 +287,7 @@
 
 (deftest enqueue-http-test
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
-                        {:form-params {:task {:data "sup"} :w 3}
+                        {:form-params {:task {:queue "queue10" :data "sup"} :w 3}
                          :content-type :json
                          :as :json})
         content-type (get-in resp [:headers "content-type"])
@@ -309,7 +310,7 @@
 
   ;; First enqueue a task
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
-                        {:form-params {:task {:data "sup"} :w 3}
+                        {:form-params {:task {:queue "queue11" :data "sup"} :w 3}
                          :content-type :json
                          :as :json})
         id (-> resp :body :id)
@@ -322,7 +323,8 @@
     (let [deadline (+ (flake/linear-time) 20000)]
       (loop []
         (let [resp (http/post "http://127.0.0.1:13100/tasks/claim"
-                              {:form-params {:dt 300000}
+                              {:form-params {:queue "queue11"
+                                             :dt    300000}
                                :content-type :json
                                :as :json})
               content-type (get-in resp [:headers "content-type"])

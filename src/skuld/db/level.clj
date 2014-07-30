@@ -31,16 +31,18 @@
         (let [claimed (task/claim task dt)]
           (level/put level
                      (.bytes ^Bytes (:id task))
-                     (task/claim task dt))
+                     claimed)
           claimed))))
 
-  (claim-task! [db id i claim]
+  (claim-task! [db task-id i claim]
     (locking db
       (assert @running)
-      (->> (-> db
-               (get-task id)
-               (task/request-claim i claim))
-           (level/put level (.bytes ^Bytes id)))))
+      (when-let [task (get-task db task-id)]
+        (let [claimed (task/request-claim task i claim)]
+          (level/put level
+                     (.bytes ^Bytes (:id task))
+                     claimed)
+          claimed))))
 
   (merge-task! [db task]
     (locking db

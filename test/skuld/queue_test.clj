@@ -3,28 +3,31 @@
         clojure.test)
   (:require [skuld.task :as task]))
 
+(skuld.flake/init!)
+
 (deftest enqueue-test
-  (let [q (queue)]
-    (is (zero? (count q)))
+  (let [q (queues)]
+    (is (zero? (count-queue q "one")))
 
-    (update! q {:id 0 :foo :bar})
-    (is (= 1 (count q)))
+    (update! q {:queue "one" :id 0 :foo :bar})
+    (is (= 1 (count-queue q "one")))
 
-    (update! q {:id 0 :bar :baz})
-    (is (= 1 (count q)))
+    (update! q {:queue "one" :id 0 :bar :baz})
+    (is (= 1 (count-queue q "one")))
 
-    (is (= (->Task 0 nil) (poll! q)))
-    (is (= nil (poll! q)))))
+    (is (= (->Task 0 nil) (poll! q "one")))
+    (is (= nil (poll! q "one")))))
 
 (deftest order-test
-  (let [q (queue)]
-    (update! q {:id 1 :priority 1})
-    (update! q {:id 3 :priority 0})
-    (update! q {:id 2 :priority 2})
-    (update! q {:id 0 :priority 2})
+  (let [q (queues)]
+    (update! q {:queue "two" :id 1 :priority 1})
+    (update! q {:queue "one" :id 1 :priority 1})
+    (update! q {:queue "one" :id 3 :priority 0})
+    (update! q {:queue "one" :id 2 :priority 2})
+    (update! q {:queue "one" :id 0 :priority 2})
 
     (is (= [3 1 0 2 nil]
-           (->> (partial poll! q)
+           (->> (partial poll! q "one")
                 repeatedly
                 (take 5)
                 (map :id))))))
