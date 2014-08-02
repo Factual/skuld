@@ -45,14 +45,26 @@
     (let [t (task {:data :hi})]
       (is (= (merge (assoc t :claims [{:start 0 :end 1 :completed 100}])
                     (assoc t :claims [{:start 2 :end 4 :completed 50}]))
-             (assoc t :claims [{:start 0 :end 4 :completed 50}])))))
+             (assoc t :claims [{:start 0 :end 4 :completed 50 :logs []}])))))
 
   (testing "completed without start"
     (let [t (task {:data :hi})]
       (is (= (merge (assoc t :claims [{:start 0 :end 1 :completed 100}])
                     (assoc t :claims [{:start 2 :end 4}])
                     (assoc t :claims [{:completed 50}]))
-             (assoc t :claims [{:start 0 :end 4 :completed 50}]))))))
+             (assoc t :claims [{:start 0 :end 4 :completed 50 :logs []}])))))
+
+  (testing "a claim with different logs"
+    (let [t (task {:data :hi})]
+      (is (= (merge (assoc t :claims [{:start 0 :end 1 :logs ["one"]}])
+                    (assoc t :claims [{:start 0 :end 1 :logs [nil "two"]}]))
+             (assoc t :claims [{:start 0 :end 1 :completed nil :logs ["one" "two"]}])))))
+
+  (testing "a claim with some of the same logs"
+    (let [t (task {:data :hi})]
+      (is (= (merge (assoc t :claims [{:start 0 :end 1 :logs ["one"]}])
+                    (assoc t :claims [{:start 0 :end 1 :logs ["one" "two"]}]))
+             (assoc t :claims [{:start 0 :end 1 :completed nil :logs ["one" "two"]}]))))))
 
 
 (deftest claim-test

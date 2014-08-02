@@ -33,7 +33,8 @@
   (let [now (flake/linear-time)]
     {:start     now
      :end       (+ now dt)
-     :completed nil}))
+     :completed nil
+     :logs      []}))
 
 (defn valid-claim?
   "Is a claim currently valid?"
@@ -97,6 +98,19 @@
       nil
       (apply merge-fn valid-times))))
 
+(defn merge-logs
+  "Merge logs vectors by picking the first non-nil value from each index"
+  [& logses]
+  (->> logses
+       (map count)
+       (apply max)
+       range
+       (mapv (fn [i]
+               (->> logses
+                    (map #(nth % i nil))
+                    (keep identity)
+                    first)))))
+
 (defn merge-claims
   "Merges a collection of vectors of claims together."
   [claims]
@@ -120,7 +134,9 @@
                                                      (:end claim))
                                 :completed (merge-by min
                                                      (:completed merged)
-                                                     (:completed claim))}
+                                                     (:completed claim))
+                                :logs      (merge-logs (:logs merged)
+                                                       (:logs claim))}
                                claim)
                              merged))
                          nil
