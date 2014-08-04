@@ -571,6 +571,18 @@
         ; The ID in the queue did not exist in the database
         (recur vnode queue-name dt)))))
 
+(defn update!
+  "Updates the given task in the specified claim. Msg should contain:
+
+  :task-id  The task identifier
+  :claim-id The claim index
+  :log-id   The log index
+  :message  The log message contents as a byte array"
+  [vnode {:keys [task-id claim-id log-id message] :as msg}]
+  (merge-task! vnode
+               (-> vnode
+                   (get-task task-id)
+                   (task/update claim-id log-id message))))
 
 (defn complete!
   "Completes the given task in the specified claim. Msg should contain:

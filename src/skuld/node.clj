@@ -352,6 +352,29 @@
          (vnode node))
     msg))
 
+(defn update-local!
+  [node msg]
+  (let [part (->> msg :task-id (partition-name node))]
+    (if-let [vnode (vnode node part)]
+      (do (vnode/update! vnode msg)
+          {:w 1})
+      {:error (str "I don't have partition" part "for task" (:task-id msg))})))
+
+(defn update!
+  [node msg]
+  (let [w (or (:w msg) 2)
+        responses (net/sync-req! (:net node)
+                                 (preflist node (:task-id msg))
+                                 {:r w}
+                                 (merge msg {:type :update-local}))
+        acks (remove :error responses)
+        w'    (reduce + (map :w acks))]
+    (if (<= w w')
+      {:w w'}
+      {:w w'
+       :error "not enough nodes acknowledged request for update"
+       :responses responses})))
+
 (defn complete-local!
   "Completes a given task on a local vnode."
   [node msg]
@@ -431,6 +454,8 @@
        :claim              claim!
        :claim-local        claim-local!
        :request-claim      request-claim!
+       :update             update!
+       :update-local       update-local!
        :complete           complete!
        :complete-local     complete-local!
        :wipe               wipe!

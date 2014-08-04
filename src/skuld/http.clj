@@ -99,6 +99,18 @@
         ret (node/complete! node msg)]
     (POST req (dissoc ret :responses))))
 
+(defn- update!
+  "Like `node/update!`, but wrapped around an HTTP request."
+  [node req id]
+  (let [id  (b64->id id)
+        cid (-> req :body :cid)
+        lid (-> req :body :lid)
+        msg (-> req :body :msg)
+        w   (-> req :query-params :w parse-int)
+        msg {:task-id id :claim-id cid :log-id lid :message msg :w w}
+        ret (node/update! node msg)]
+    (POST req (dissoc ret :responses))))
+
 (defn- count-tasks
   "Like `node/count-tasks`, but wrapped around an HTTP request."
   [node req]
@@ -145,6 +157,7 @@
     (condp route-matches req
       "/queue/count"        (count-queue node req)
       "/tasks/claim"        (claim! node req)
+      "/tasks/update/:id"   :>> (fn [{:keys [id]}] (update! node req id))
       "/tasks/complete/:id" :>> (fn [{:keys [id]}] (complete! node req id))
       "/tasks/count"        (count-tasks node req)
       "/tasks/enqueue"      (enqueue! node req)
