@@ -17,7 +17,7 @@
 (defn- encode-bytes
   "Encode a bytes to the json generator."
   [^Bytes b ^JsonGenerator jg]
-  (.writeString jg (-> ^Bytes b .bytes b64/encode String. (.replaceAll "\\+" "-") (.replaceAll "/" "_"))))
+  (.writeString jg (-> ^Bytes b .bytes b64/encode String.)))
 
 ;; Custom Cheshire encoder for the Bytes type
 (add-encoder Bytes encode-bytes)
@@ -62,7 +62,12 @@
 (defn- b64->id
   "Coerces a base64-encoded id into a Bytes type."
   [^String b64-id]
-  (-> b64-id (.replaceAll "-" "+") (.replaceAll "_" "/" ) .getBytes b64/decode Bytes.))
+  (-> b64-id (.replaceAll "-" "+") (.replaceAll "_" "/") .getBytes b64/decode Bytes.))
+
+(defn- b64->bytes
+  "Coerce a base64-encoded value into a Bytes type."
+  [^String b64-str]
+  (-> b64-str .getBytes b64/decode Bytes.))
 
 (defn- parse-int
   "Safely coerces a string into an integer. If the conversion is impossible,
@@ -105,7 +110,7 @@
   (let [id  (b64->id id)
         cid (-> req :body :cid)
         lid (-> req :body :lid)
-        msg (-> req :body :msg)
+        msg (-> req :body :msg b64->bytes)
         w   (-> req :query-params :w parse-int)
         msg {:task-id id :claim-id cid :log-id lid :message msg :w w}
         ret (node/update! node msg)]
