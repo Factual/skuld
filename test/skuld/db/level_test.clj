@@ -1,9 +1,9 @@
 (ns skuld.db.level-test
-  (:use skuld.db.level
-        skuld.db
-        clojure.test)
-  (:require [skuld.flake-test :as flake]
-            [skuld.task :as task]))
+  (:require [skuld.db.level :refer :all]
+            [skuld.db :refer :all]
+            [skuld.flake-test :as flake]
+            [skuld.task :as task]
+            [clojure.test :refer :all]))
 
 (def ^:dynamic *db*)
 

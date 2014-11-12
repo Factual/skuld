@@ -1,11 +1,11 @@
 (ns skuld.aae
   "Active-anti-entropy service. This watches over local partitions and
   continually synchronizes their data with their peers."
-  (:use clojure.tools.logging)
   (:require [skuld.vnode :as vnode]
             [skuld.net :as net]
             [merkle.kv.linear :as merkle]
-            [clj-helix.route :as route]))
+            [clj-helix.route :as route]
+            [clojure.tools.logging :refer [warn]]))
 
 (defn merkle-tree
   "Computes a merkle-tree of a vnode."
@@ -90,13 +90,13 @@
   ; Get remote tree
   (when-let [response (-> vnode
                           :net
-                          (net/sync-req! 
+                          (net/sync-req!
                             [peer]
                             {}
                             {:type :aae-tree
                              :partition (:partition vnode)})
                           first)]
-                             
+
     ; Compute diffs
     (let [remote-tree (merkle/map->node (:tree response))
           updates (merkle/diff (vnode/tasks vnode)

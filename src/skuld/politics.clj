@@ -1,7 +1,7 @@
 (ns skuld.politics
   "Periodically initiates the election cycle."
-  (:require [skuld.vnode :as vnode])
-  (:use clojure.tools.logging))
+  (:require [skuld.vnode :as vnode]
+            [clojure.tools.logging :refer [warn]]))
 
 (defn service
   "Creates a new politics service."
@@ -11,7 +11,7 @@
       (loop []
         (try
           (when-let [vnodes (-> vnodes deref vals)]
-            (->> vnodes 
+            (->> vnodes
                  shuffle
                  (pmap
                    (fn [vnode]

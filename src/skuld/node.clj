@@ -1,7 +1,5 @@
 (ns skuld.node
   "A single node in the Skuld cluster. Manages any number of vnodes."
-  (:use skuld.util
-        clojure.tools.logging)
   (:require [clj-helix.manager :as helix]
             clj-helix.admin
             clj-helix.fsm
@@ -14,7 +12,9 @@
             [skuld.net :as net]
             [skuld.politics :as politics]
             [skuld.task :as task]
-            [skuld.vnode :as vnode])
+            [skuld.vnode :as vnode]
+            [skuld.util :refer [sorted-interleave-by]]
+            [clojure.tools.logging :refer [trace debug info warn fatal]])
   (:import (java.util Arrays)
            com.aphyr.skuld.Bytes))
 
@@ -356,7 +356,7 @@
   "Completes a given task on a local vnode."
   [node msg]
   (let [part (->> msg :task-id (partition-name node))]
-    (if-let [vnode (vnode node part)] 
+    (if-let [vnode (vnode node part)]
       (do (vnode/complete! vnode msg)
           {:w 1})
       {:error (str "I don't have partition" part "for task" (:task-id msg))})))
@@ -600,7 +600,7 @@
 
 (defn controller
   "Creates a new controller, with the given options.
-  
+
   :zookeeper    \"localhost:2181\"
   :cluster      :skuld
   :host         \"127.0.0.1\"

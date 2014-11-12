@@ -1,19 +1,17 @@
 (ns skuld.leader-test
-    (:use clojure.tools.logging
-                  clojure.test
-                  skuld.util
-                  skuld.node
-                  skuld.node-test)
-
-  (:require [skuld.client  :as client]
-            [skuld.admin   :as admin]
-            [skuld.vnode   :as vnode]
-            [skuld.flake   :as flake]
-            [skuld.curator :as curator]
-            [skuld.net     :as net]
-            [skuld.task    :as task]
-            [skuld.aae     :as aae]
-            [clojure.set   :as set]
+  (:require [skuld.client    :as client]
+            [skuld.admin     :as admin]
+            [skuld.vnode     :as vnode]
+            [skuld.node      :as node]
+            [skuld.flake     :as flake]
+            [skuld.curator   :as curator]
+            [skuld.net       :as net]
+            [skuld.task      :as task]
+            [skuld.aae       :as aae]
+            [clojure.set     :as set]
+            [clojure.test    :refer :all]
+            [skuld.util      :refer [majority]]
+            [skuld.node-test :refer :all]
             clj-helix.admin)
     (:import com.aphyr.skuld.Bytes))
 
@@ -55,10 +53,10 @@
 (deftest election-test
   (let [part "skuld_0"
         nodes (filter (fn [node]
-                        (when-let [v (vnode node part)]
+                        (when-let [v (node/vnode node part)]
                           (vnode/active? v)))
                       *nodes*)
-        vnodes (map #(vnode % part) nodes)]
+        vnodes (map #(node/vnode % part) nodes)]
 
     (testing "Initially"
       (test-election-consistent vnodes))

@@ -3,9 +3,8 @@
            (com.aphyr.skuld Bytes))
   (:require [clj-leveldb :as level]
             [skuld.task :as task]
-            [skuld.util :refer [fress-read fress-write]])
-  (:use skuld.db
-        clojure.tools.logging))
+            [skuld.db :refer :all]
+            [skuld.util :refer [fress-read fress-write]]))
 
 (defrecord Level [level count-cache running]
   DB
@@ -61,7 +60,7 @@
                          (.close ^Closeable level)
                          false)))))
 
-  
+
   (wipe! [db]
     (locking db
       (when @running
@@ -74,7 +73,7 @@
 (defn open
   "Start a database service. Initializes the local DB storage and binds the
   database for further calls. Options:
-  
+
   :host
   :port
   :partition

@@ -1,8 +1,8 @@
 (ns skuld.db
   "Database backend interface."
   (:import (java.io File))
-  (:use [potemkin :only [defprotocol+]])
-  (:require [clojure.java.io :as io]))
+  (:require [potemkin :refer [defprotocol+]]
+            [clojure.java.io :as io]))
 
 (defprotocol+ DB
     (ids [db])
@@ -18,7 +18,7 @@
 
 (defn path
   "Constructs a path name for storing data in a vnode. Options:
-  
+
   :host
   :port
   :partition

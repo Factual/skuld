@@ -1,7 +1,6 @@
 (ns skuld.util-test
-  (:use skuld.util
-        clojure.test
-        clojure.pprint))
+  (:require [skuld.util :refer :all]
+            [clojure.test :refer :all]))
 
 (deftest sorted-interleave-test
   (is (= [1 2 3 4 5 6 7]

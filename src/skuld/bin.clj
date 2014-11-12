@@ -1,11 +1,10 @@
 (ns skuld.bin
-  (:use [clj-helix.logging :only [mute]]
-        [clojure.tools.cli :only [cli]]
-        clojure.tools.logging)
   (:require [skuld.admin :as admin]
             [skuld.node :as node]
             [skuld.flake :as flake]
-            [skuld.http])
+            [skuld.http]
+            [clojure.tools.cli :refer [cli]]
+            [clojure.tools.logging :refer [debug info]])
   (:import (sun.misc Signal SignalHandler))
   (:gen-class))
 
@@ -64,7 +63,7 @@
 (defn controller [& args]
   (let [[opts _ _] (apply cli args node-spec)
         controller (node/controller opts)]
-      
+
     (.addShutdownHook (Runtime/getRuntime)
                       (Thread. (bound-fn []
                                  (node/shutdown! controller))))

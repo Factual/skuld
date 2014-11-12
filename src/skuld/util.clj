@@ -1,5 +1,6 @@
 (ns skuld.util
   "An Kitsch Sink"
+  (:refer-clojure :exclude [update])
   (:require
     [clojure.data.fressian :as fress]
     [primitive-math :as p])

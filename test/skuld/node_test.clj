@@ -1,22 +1,22 @@
 (ns skuld.node-test
-  (:use clojure.tools.logging
-        clojure.test
-        skuld.zk-test
-        skuld.util
-        skuld.node)
-  (:require [skuld.client    :as client]
-            [skuld.admin     :as admin]
-            [skuld.vnode     :as vnode]
-            [skuld.curator   :as curator]
-            [skuld.net       :as net]
-            [skuld.task      :as task]
-            [skuld.flake     :as flake]
-            [skuld.aae       :as aae]
-            [skuld.politics  :as politics]
-            [skuld.logging   :as logging]
-            [clojure.set     :as set]
-            [clj-http.client :as http]
-            [cheshire.core   :as json]
+  (:require [skuld.node            :refer :all]
+            [skuld.client          :as client]
+            [skuld.admin           :as admin]
+            [skuld.vnode           :as vnode]
+            [skuld.curator         :as curator]
+            [skuld.net             :as net]
+            [skuld.task            :as task]
+            [skuld.flake           :as flake]
+            [skuld.aae             :as aae]
+            [skuld.politics        :as politics]
+            [skuld.logging         :as logging]
+            [clojure.set           :as set]
+            [clj-http.client       :as http]
+            [cheshire.core         :as json]
+            [clojure.test          :refer :all]
+            [clojure.tools.logging :refer [info]]
+            [skuld.zk-test         :refer [with-zk]]
+            [skuld.util            :refer [majority-value]]
             skuld.http
             skuld.flake-test
             clj-helix.admin)

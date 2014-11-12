@@ -1,8 +1,8 @@
 (ns skuld.flake-test
-  (:use skuld.flake
-        clojure.test
-        [criterium.core :only [quick-bench]])
-  (:require [clojure.data.codec.base64 :as base64])
+  (:require [skuld.flake :refer :all]
+            [clojure.data.codec.base64 :as base64]
+            [clojure.test :refer :all]
+            [criterium.core :refer [quick-bench]])
   (:import (java.util Arrays)
            (com.google.common.primitives UnsignedBytes)))
 

@@ -11,9 +11,8 @@
    :end       (long) milliseconds in linear time
    :completed (long) milliseconds in linear time}"
   (:refer-clojure :exclude [merge])
-  (:use skuld.util)
   (:require [skuld.flake :as flake]
-            [skuld.util :refer [fress-read fress-write]])
+            [skuld.util :refer [fress-read fress-write assocv]])
   (:import com.aphyr.skuld.Bytes))
 
 (def clock-skew-buffer

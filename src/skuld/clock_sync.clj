@@ -1,9 +1,9 @@
 (ns skuld.clock-sync
   "Exchanges heartbeats with peers to ensure clocks are synchronized."
-  (:use clojure.tools.logging)
   (:require [skuld.net :as net]
             [skuld.flake :as flake]
-            [clj-helix.route :as route]))
+            [clj-helix.route :as route]
+            [clojure.tools.logging :refer [warn warnf]]))
 
 (defn service
   "Creates a new clock-sync service."
@@ -19,7 +19,7 @@
                                   "is"
                                   delta
                                   "milliseconds!")))
-                        {})))                            
+                        {})))
 
   (let [running (promise)]
     ; Periodically emit heartbeats to peers

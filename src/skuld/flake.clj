@@ -1,11 +1,11 @@
 (ns skuld.flake
   "ID generation. Flake IDs are 160 bits, and comprise:
-  
+
   [64 bits | Timestamp, in milliseconds since the epoch]
   [32 bits | a per-process counter, reset each millisecond]
   [48 bits | a host identifier]
   [16 bits | the process ID]
-  
+
   Note that the timestamp is not Posix time or UTC time. Instead we use the
   JVM's nanoTime, which is a linear time source over intervals smaller than
   ~292 years, and use it to compute an offset from the POSIX time as measured
@@ -13,8 +13,8 @@
 
   Regressions in time are not allowed; Flake will periodically serialize the
   current time to disk to prevent regressions."
-  (:require [primitive-math :as p])
-  (:use     [potemkin :only [deftype+]])
+  (:require [primitive-math :as p]
+            [potemkin :refer [deftype+]])
   (:import (java.lang.management ManagementFactory)
            (java.net InetAddress
                      NetworkInterface)
@@ -22,7 +22,7 @@
            (java.security MessageDigest)
            (java.util Arrays)
            (java.util.concurrent.atomic AtomicInteger)))
-           
+
 (defonce initialized (atom false))
 
 ; Cached state
@@ -67,7 +67,7 @@
   system. Takes n samples."
   [n]
   (-> (->> (repeatedly time-offset-estimate)
-           (map double) 
+           (map double)
            (take n)
            (reduce +))
       (/ n)

@@ -1,20 +1,17 @@
 (ns skuld.stress-test
-    (:use clojure.tools.logging
-                  clojure.test
-                  skuld.util
-                  skuld.node
-                  skuld.node-test)
-
-  (:require [skuld.client  :as client]
-            [skuld.admin   :as admin]
-            [skuld.vnode   :as vnode]
-            [skuld.flake   :as flake]
-            [skuld.curator :as curator]
-            [skuld.politics :as politics]
-            [skuld.net     :as net]
-            [skuld.task    :as task]
-            [skuld.aae     :as aae]
-            [clojure.set   :as set]
+  (:require [skuld.node      :refer :all]
+            [skuld.node-test :refer :all]
+            [skuld.client    :as client]
+            [skuld.admin     :as admin]
+            [skuld.vnode     :as vnode]
+            [skuld.flake     :as flake]
+            [skuld.curator   :as curator]
+            [skuld.politics  :as politics]
+            [skuld.net       :as net]
+            [skuld.task      :as task]
+            [skuld.aae       :as aae]
+            [clojure.set     :as set]
+            [clojure.test    :refer :all]
             clj-helix.admin)
     (:import com.aphyr.skuld.Bytes))
 
@@ -63,7 +60,7 @@
   (dorun (pmap (comp politics/shutdown! :politics) *nodes*))
 
   (elect! *nodes*)
-  
+
   ; Enqueue something and claim it.
   (let [id       (client/enqueue! *client* {:w 3} {:queue "queue13" :data "meow"})
         deadline (+ (flake/linear-time) 20000)
@@ -125,7 +122,7 @@
                      (map vnodes)
                      (map vals)
                      (map (partial mapcat vnode/tasks))
-                     (map (partial some #(= id (:id %)))) 
+                     (map (partial some #(= id (:id %))))
                      (filter true?)
                      count)))
 

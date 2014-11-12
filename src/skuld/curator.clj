@@ -315,7 +315,7 @@
   shared-atom does not use lock promotion; all writes are optimistic with
   exponential backoff. Reads are cheaper because they can use a locally cached
   value. Also unlike distributed-atom, shared-atom is watchable for changes.
-  
+
   You must explicitly shut down a shared-atom using shutdown-shared."
   [^CuratorFramework curator path initial-value]
 
@@ -344,7 +344,7 @@
 
     ; Do an initial read
     (refresh-shared-atom! a)
-    
+
     a))
 
 (defn swap!!

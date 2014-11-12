@@ -1,7 +1,7 @@
 (ns skuld.scanner
   "Periodically scans over vnodes to rebuild internal data structures."
-  (:use clojure.tools.logging)
-  (:require [skuld.queue :as queue]))
+  (:require [skuld.queue :as queue]
+            [clojure.tools.logging :refer [warn]]))
 
 ; DEAL WITH IT
 (in-ns 'skuld.vnode)

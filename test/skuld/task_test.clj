@@ -1,10 +1,9 @@
 (ns skuld.task-test
   (:refer-clojure :exclude [merge])
-  (:use skuld.task
-        clojure.test)
-  (:require skuld.flake-test
-            [skuld.flake :as flake]))
-
+  (:require [skuld.task :refer :all]
+            skuld.flake-test
+            [skuld.flake :as flake]
+            [clojure.test :refer :all]))
 
 (deftest merge-claim-test
   (testing "empty"
@@ -14,7 +13,7 @@
   (testing "one claim set"
     (is (= (merge-claims [[{:start 1 :end 2} nil {:start 3 :end 5}]])
                           [{:start 1 :end 2} nil {:start 3 :end 5}])))
-  
+
   (testing "several claim sets"
     (is (= (->> (merge-claims
                   [[{:start 0 :end 2} nil               {:start 6 :end 9}]
@@ -89,7 +88,7 @@
                    (-> (task {:data :kit})
                        (request-claim 0 {:start 0 :end 10})
                        (request-claim 1 {:start 9 :end 11}))))))
-    
+
     (is (thrown? IllegalStateException
                  (let [t (flake/linear-time)]
                    (with-redefs [clock-skew-buffer 10]

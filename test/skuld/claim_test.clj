@@ -1,26 +1,21 @@
 (ns skuld.claim-test
-  (:use clojure.tools.logging
-        clojure.test
-        skuld.util
-        skuld.node
-        skuld.node-test)
-
-  (:require [skuld.client  :as client]
-            [skuld.admin   :as admin]
-            [skuld.vnode   :as vnode]
-            [skuld.flake   :as flake]
-            [skuld.curator :as curator]
-            [skuld.net     :as net]
-            [skuld.task    :as task]
-            [skuld.aae     :as aae]
-            [clojure.set   :as set]
-            [skuld.logging :as logging]
+  (:require [skuld.client    :as client]
+            [skuld.admin     :as admin]
+            [skuld.vnode     :as vnode]
+            [skuld.flake     :as flake]
+            [skuld.curator   :as curator]
+            [skuld.net       :as net]
+            [skuld.task      :as task]
+            [skuld.aae       :as aae]
+            [clojure.set     :as set]
+            [skuld.logging   :as logging]
+            [clojure.test    :refer :all]
+            [skuld.node-test :refer :all]
             clj-helix.admin)
   (:import com.aphyr.skuld.Bytes))
 
 (use-fixtures :once once)
 (use-fixtures :each each)
-
 
 (deftest claim-test
   (elect! *nodes*)
@@ -35,15 +30,15 @@
   (with-redefs [task/clock-skew-buffer 500]
     (let [id (client/enqueue! *client* {:w 3} {:queue "queue2" :data "maus"})]
       (is (= id (:id (client/claim! *client* "queue2" 1000))))
-      
+
       ; Can't reclaim, because it's already claimed
       (is (nil? (client/claim! *client* "queue2" 1000)))
-      
+
       ; Can't reclaim after 1000ms because clock skew buffer still holds
       (Thread/sleep 1001)
       (is (nil? (client/claim! *client* "queue2" 1000)))
-      
-      ; But after the buffer has elapsed, good to go. 
+
+      ; But after the buffer has elapsed, good to go.
       (Thread/sleep 1500)
 
       (let [t (client/claim! *client* "queue2" 1000)]

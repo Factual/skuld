@@ -1,9 +1,9 @@
 (ns skuld.net-test
-  (:use skuld.net
-        clojure.test)
   (:import java.util.concurrent.CountDownLatch)
-  (:require skuld.flake-test
-            [clojure.set :as set]))
+  (:require [skuld.net :refer :all]
+            skuld.flake-test
+            [clojure.set :as set]
+            [clojure.test :refer :all]))
 
 (deftest solipsist
   (let [node (node {:host "127.0.0.1" :port 13000})
@@ -127,7 +127,7 @@
       (req! a [b] {:r 1 :timeout 1000} {:hi :there}
             [responses]
             (deliver rs responses))
-      
+
       (is (= [] @rs))
       @done
       (Thread/sleep 100)

@@ -1,7 +1,5 @@
 (ns skuld.vnode
   "A state machine which manages an instance of a partition on this node."
-  (:use skuld.util
-        clojure.tools.logging)
   (:require [skuld.task       :as task]
             [skuld.db         :as db]
             [skuld.db.level   :as level]
@@ -10,8 +8,10 @@
             [skuld.curator    :as curator]
             [skuld.scanner    :as scanner]
             [skuld.queue      :as queue]
+            [skuld.util       :refer [majority]]
             [clj-helix.route  :as route]
-            [clojure.set      :as set])
+            [clojure.set      :as set]
+            [clojure.tools.logging :refer [info error errorf]])
   (:import com.aphyr.skuld.Bytes))
 
 ; DEAL WITH IT
@@ -24,7 +24,7 @@
 
 (defn vnode
   "Create a new vnode. Options:
-  
+
   :partition
   :state"
   [opts]
@@ -284,17 +284,17 @@
 
   1. Leaders are logically sequential
   2. Each leader's claim set is a superset of the previous leader
-  
+
   We have: a target cohort of nodes for the new epoch, provided by helix.
   Some previous cohort of nodes belonging to the old epoch, tracked by ZK.
 
   To become a leader, one must successfully:
 
   1. Read the previous epoch+cohort from ZK
-  
+
   2. (optimization) Ensure that the previous epoch is strictly less than the
   epoch this node is going to be the leader for.
-  
+
   3. Broadcast a claim message to the new cohort, union the old cohort
 
   4. Receive votes from a majority of the nodes in the old cohort
@@ -485,7 +485,7 @@
 
 (defn request-claim!
   "Applies a claim to a given task. Takes a message from a leader like
-  
+
   {:epoch  The leader's epoch
    :id     The task ID
    :i      The index of the claim
@@ -574,7 +574,7 @@
 
 (defn complete!
   "Completes the given task in the specified claim. Msg should contain:
-  
+
   :task-id  The task identifier
   :claim-id The claim index
   :time     The time the task was completed at, in linear time."

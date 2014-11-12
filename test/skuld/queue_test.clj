@@ -1,7 +1,7 @@
 (ns skuld.queue-test
-  (:use skuld.queue
-        clojure.test)
-  (:require [skuld.task :as task]))
+  (:require [skuld.queue :refer :all]
+            [skuld.task :as task]
+            [clojure.test :refer :all]))
 
 (skuld.flake/init!)
 
