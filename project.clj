@@ -8,7 +8,7 @@
   :repositories [["jboss-fs-public" "http://repository.jboss.org/nexus/content/groups/fs-public/"]]
   :exclusions [[log4j]
                [org.slf4j/slf4j-log4j12]]
-  :dependencies [[org.clojure/clojure "1.5.1"]
+  :dependencies [[org.clojure/clojure "1.6.0"]
                  [org.clojure/tools.cli "0.3.1"]
                  [org.clojure/tools.logging "0.3.1"]
                  [ch.qos.logback/logback-classic "1.1.2"]
