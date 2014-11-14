@@ -9,7 +9,8 @@
             [ring.adapter.jetty        :refer [run-jetty]]
             [ring.middleware.json      :refer [wrap-json-body]]
             [ring.util.codec           :refer [form-decode]]
-            [skuld.node                :as node])
+            [skuld.node                :as node]
+            [skuld.flake               :as flake])
   (:import [com.aphyr.skuld Bytes]
            [com.fasterxml.jackson.core JsonGenerator JsonParseException]
            [org.eclipse.jetty.server Server]))
@@ -138,6 +139,10 @@
       (GET req {:error "No such task"} not-found)
       (GET req (dissoc ret :responses)))))
 
+(defn- id [req]
+  "Returns a flake id"
+  (GET req {:id (Bytes. (flake/id))}))
+
 (defn- make-handler
   "Given a node, constructs the handler function. Returns a response map."
   [node]
@@ -150,6 +155,7 @@
       "/tasks/enqueue"      (enqueue! node req)
       "/tasks/list"         (list-tasks node req)
       "/tasks/:id"          :>> (fn [{:keys [id]}] (get-task node req id))
+      "/id"                 (id req)
       not-found)))
 
 ;; Lifted from `ring.middleware.params`

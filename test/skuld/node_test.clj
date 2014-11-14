@@ -243,7 +243,7 @@
   (let [n 10]
     (dotimes [i n]
       (client/enqueue! *client* {:w 3} {:queue "queue7" :data "sup"}))
-   
+
     ; List
     (let [tasks (client/list-tasks *client*)]
       (is (= n (count tasks)))
@@ -284,6 +284,15 @@
     (let [resp (http/post (str "http://127.0.0.1:13100/tasks/" id)
                          {:throw-exceptions false})]
       (is (= 405 (:status resp))))))
+
+(deftest get-id-http-test
+  (let [resp (http/get "http://127.0.0.1:13100/id"
+                       {:content-type :json
+                        :as           :json})
+        id (-> resp :body :id)]
+    (is (= 200 (:status resp)))
+    (is (string? id))
+    (is (= 28 (count id)))))
 
 (deftest enqueue-http-test
   (let [resp (http/post "http://127.0.0.1:13100/tasks/enqueue"
