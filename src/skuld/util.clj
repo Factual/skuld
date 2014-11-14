@@ -28,7 +28,7 @@
 (defn- sorted-interleave- [key-fn ^PriorityQueue heap]
   (lazy-seq
     (loop [chunk-idx 0, buf (chunk-buffer 32)]
-      (if (.isEmpty heap) 
+      (if (.isEmpty heap)
         (chunk-cons (chunk buf) nil)
         (let [^SeqContainer container (.poll heap)]
           (chunk-append buf (first (.s container)))
@@ -131,7 +131,10 @@
                          (Bytes. (.readObject rdr))))
     "vector"
     (reify ReadHandler (fress/read [_ rdr tag component-count]
-                         (vec (.readObject rdr))))})
+                         (vec (.readObject rdr))))
+    "set"
+    (reify ReadHandler (fress/read [_ rdr tag component-count]
+                         (set (.readObject rdr))))})
 
 (def ^:private skuld-write-handlers
   (-> (conj bytes-write-handler fress/clojure-write-handlers)
