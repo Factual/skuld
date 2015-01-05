@@ -35,7 +35,9 @@
      :default 3 :parse-fn parse-int]])
 
 (def node-spec
-  [["-p" "--port" "Port"     :default "13000"     :parse-fn parse-int]
+  [["-z" "--zookeeper" "Zookeeper connection string"
+    :default "localhost:2181"]
+   ["-p" "--port" "Port"     :default "13000"     :parse-fn parse-int]
    ["-h" "--host" "Hostname" :default "127.0.0.1"]])
 
 ; Cluster configuration
