@@ -85,17 +85,17 @@
                   (list value))
           vec))))
 
-(defn update
-  "Like update-in, but takes a single key. Given a map, a key, a function, and
-  args, updates the value of (get map key) to be (f current-value arg1 arg2
-  ...)"
-  [m k f & args]
-  (assoc m k (apply f (get m k) args)))
-
-(defn update!
-  "Transient version of update"
-  [m k f & args]
-  (assoc! m k (apply f (get m k) args)))
+;(defn update
+;  "Like update-in, but takes a single key. Given a map, a key, a function, and
+;  args, updates the value of (get map key) to be (f current-value arg1 arg2
+;  ...)"
+;  [m k f & args]
+;  (assoc m k (apply f (get m k) args)))
+;
+;(defn update!
+;  "Transient version of update"
+;  [m k f & args]
+;  (assoc! m k (apply f (get m k) args)))
 
 (defmacro compare+
   "Expands into a comparison between a and b on the basis of function f1, then

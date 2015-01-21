@@ -9,11 +9,11 @@
 
   {:start     (long) milliseconds in linear time
    :end       (long) milliseconds in linear time
-   :completed (long) milliseconds in linear time}"
+   :completed (long) milliseconds in linear time
+   :logs      [...]  a vector of logs}"
   (:refer-clojure :exclude [merge])
-  (:use skuld.util)
   (:require [skuld.flake :as flake]
-            [skuld.util :refer [fress-read fress-write]])
+            [skuld.util :refer [fress-read fress-write assocv]])
   (:import com.aphyr.skuld.Bytes))
 
 (def clock-skew-buffer
@@ -33,7 +33,8 @@
   (let [now (flake/linear-time)]
     {:start     now
      :end       (+ now dt)
-     :completed nil}))
+     :completed nil
+     :logs      []}))
 
 (defn valid-claim?
   "Is a claim currently valid?"
@@ -88,6 +89,11 @@
   [task claim-idx t]
   (assoc-in task [:claims claim-idx :completed] t))
 
+(defn update
+  "Return a copy of the task with the log updated. Takes a claim index, log index
+  and message."
+  [task claim-idx log-idx message]
+  (assoc-in task [:claims claim-idx :logs log-idx] message))
 
 (defn merge-by
   "Merges times by merge-fn"
@@ -96,6 +102,19 @@
     (if (empty? valid-times)
       nil
       (apply merge-fn valid-times))))
+
+(defn merge-logs
+  "Merge logs vectors by picking the first non-nil value from each index"
+  [& logses]
+  (->> logses
+       (map count)
+       (apply max)
+       range
+       (mapv (fn [i]
+               (->> logses
+                    (map #(nth % i nil))
+                    (keep identity)
+                    first)))))
 
 (defn merge-claims
   "Merges a collection of vectors of claims together."
@@ -120,7 +139,9 @@
                                                      (:end claim))
                                 :completed (merge-by min
                                                      (:completed merged)
-                                                     (:completed claim))}
+                                                     (:completed claim))
+                                :logs      (merge-logs (:logs merged)
+                                                       (:logs claim))}
                                claim)
                              merged))
                          nil

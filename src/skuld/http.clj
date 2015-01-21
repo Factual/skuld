@@ -18,7 +18,7 @@
 (defn- encode-bytes
   "Encode a bytes to the json generator."
   [^Bytes b ^JsonGenerator jg]
-  (.writeString jg (-> ^Bytes b .bytes b64/encode String. (.replaceAll "\\+" "-") (.replaceAll "/" "_"))))
+  (.writeString jg (-> ^Bytes b .bytes b64/encode String.)))
 
 ;; Custom Cheshire encoder for the Bytes type
 (add-encoder Bytes encode-bytes)
@@ -63,7 +63,12 @@
 (defn- b64->id
   "Coerces a base64-encoded id into a Bytes type."
   [^String b64-id]
-  (-> b64-id (.replaceAll "-" "+") (.replaceAll "_" "/" ) .getBytes b64/decode Bytes.))
+  (-> b64-id (.replaceAll "-" "+") (.replaceAll "_" "/") .getBytes b64/decode Bytes.))
+
+(defn- b64->bytes
+  "Coerce a base64-encoded value into a Bytes type."
+  [^String b64-str]
+  (-> b64-str .getBytes b64/decode Bytes.))
 
 (defn- parse-int
   "Safely coerces a string into an integer. If the conversion is impossible,
@@ -98,6 +103,18 @@
         w   (-> req :query-params :w parse-int)
         msg {:task-id id :claim-id cid :w w}
         ret (node/complete! node msg)]
+    (POST req (dissoc ret :responses))))
+
+(defn- update!
+  "Like `node/update!`, but wrapped around an HTTP request."
+  [node req id]
+  (let [id  (b64->id id)
+        cid (-> req :body :cid)
+        lid (-> req :body :lid)
+        msg (-> req :body :msg b64->bytes)
+        w   (-> req :query-params :w parse-int)
+        msg {:task-id id :claim-id cid :log-id lid :message msg :w w}
+        ret (node/update! node msg)]
     (POST req (dissoc ret :responses))))
 
 (defn- count-tasks
@@ -150,6 +167,7 @@
     (condp route-matches req
       "/queue/count"        (count-queue node req)
       "/tasks/claim"        (claim! node req)
+      "/tasks/update/:id"   :>> (fn [{:keys [id]}] (update! node req id))
       "/tasks/complete/:id" :>> (fn [{:keys [id]}] (complete! node req id))
       "/tasks/count"        (count-tasks node req)
       "/tasks/enqueue"      (enqueue! node req)

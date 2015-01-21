@@ -350,6 +350,20 @@
               (is (= id id*))
               (is (not= claims []))))))
 
+      ;; Add a log message
+      (let [uri (str "http://127.0.0.1:13100/tasks/update/" id)
+            cid 0
+            lid 0
+            resp (http/post uri {:form-params {:cid cid :lid lid :message "status=10"}
+                                 :content-type :json
+                                 :as :json})
+            content-type (get-in resp [:headers "content-type"])
+            resp* (http/get (str "http://127.0.0.1:13100/tasks/" id "?r=3")
+                            {:as :json})
+            logs (-> resp* :body :task :claims (nth cid) :logs)]
+        (is (= 200 (:status resp)))
+        (is (= "application/json;charset=utf-8" content-type))
+        (is (not (nil? logs))))
 
       ;; Finally let's complete it
       (let [uri (str "http://127.0.0.1:13100/tasks/complete/" id)
